@@ -9,6 +9,7 @@ the Free Software Foundation, either version 3 of the License, or
 */
 
 #include "common.h"
+#include <float.h>
 #include "client.h"
 #include "input.h"
 #include "keydefs.h"
@@ -73,6 +74,31 @@ static float vr_body_view_yaw;
 static qboolean vr_body_view_valid;
 
 static void CL_VRTransformVector( const vec3_t in, const ref_vr_pose_t *origin, vec3_t out );
+
+static qboolean CL_VRSidecarFinite( float value )
+{
+	return value == value && value >= -FLT_MAX && value <= FLT_MAX;
+}
+
+static int16_t CL_VRSidecarQuantize( float value, float scale )
+{
+	int quantized;
+
+	if( !CL_VRSidecarFinite( value ))
+		return 0;
+	value *= scale;
+	quantized = value >= 0.0f ? (int)( value + 0.5f ) : (int)( value - 0.5f );
+	return (int16_t)bound( -32768, quantized, 32767 );
+}
+
+static void CL_VRSidecarRotateYaw( vec3_t vector, float yaw )
+{
+	float sine, cosine, x = vector[0], y = vector[1];
+
+	SinCos( DEG2RAD( yaw ), &sine, &cosine );
+	vector[0] = x * cosine - y * sine;
+	vector[1] = x * sine + y * cosine;
+}
 
 static qboolean CL_VRHandPosition( int hand, vec3_t position )
 {
@@ -833,6 +859,66 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 
 	COM_NormalizeAngles( cmd->viewangles );
 	VectorCopy( cmd->viewangles, cl.viewangles );
+}
+
+void CL_VRBuildUsercmdSidecar( const usercmd_t *cmd, vr_usercmd_sidecar_t *sample )
+{
+	const ref_vr_hand_t *weapon, *offhand;
+	ref_vr_pose_t relativeWeapon, relativeOffhand;
+	vec3_t weaponAngles, offhandAngles, weaponVelocity;
+	int dominant, support, index;
+
+	if( !sample )
+		return;
+	memset( sample, 0, sizeof( *sample ));
+	if( !cmd || !CL_VRIsActive() || !vr_center_valid ||
+		!FBitSet( vr_frame.flags, REF_VR_FRAME_ACTIONS_VALID ))
+		return;
+
+	dominant = vr_control_scheme.value >= 10.0f ? REF_VR_HAND_LEFT : REF_VR_HAND_RIGHT;
+	support = dominant == REF_VR_HAND_LEFT ? REF_VR_HAND_RIGHT : REF_VR_HAND_LEFT;
+	weapon = &vr_frame.hands[dominant];
+	offhand = &vr_frame.hands[support];
+	if( !FBitSet( weapon->flags, REF_VR_HAND_AIM_VALID ))
+		return;
+
+	CL_VRRelativePose( &weapon->aim, &vr_center, &relativeWeapon );
+	if( FBitSet( offhand->flags, REF_VR_HAND_AIM_VALID ))
+		CL_VRRelativePose( &offhand->aim, &vr_center, &relativeOffhand );
+	else relativeOffhand = relativeWeapon;
+	VectorsAngles( relativeWeapon.forward, relativeWeapon.right, relativeWeapon.up, weaponAngles );
+	VectorsAngles( relativeOffhand.forward, relativeOffhand.right, relativeOffhand.up, offhandAngles );
+	weaponAngles[YAW] += cmd->viewangles[YAW];
+	offhandAngles[YAW] += cmd->viewangles[YAW];
+	COM_NormalizeAngles( weaponAngles );
+	COM_NormalizeAngles( offhandAngles );
+	CL_VRSidecarRotateYaw( relativeWeapon.position, cmd->viewangles[YAW] );
+	CL_VRSidecarRotateYaw( relativeOffhand.position, cmd->viewangles[YAW] );
+	CL_VRTransformVector( weapon->linear_velocity, &vr_center, weaponVelocity );
+	CL_VRSidecarRotateYaw( weaponVelocity, cmd->viewangles[YAW] );
+
+	for( index = 0; index < 3; ++index )
+	{
+		if( !CL_VRSidecarFinite( relativeWeapon.position[index] ) || !CL_VRSidecarFinite( relativeOffhand.position[index] ) ||
+			!CL_VRSidecarFinite( weaponVelocity[index] ) || !CL_VRSidecarFinite( weaponAngles[index] ) ||
+			!CL_VRSidecarFinite( offhandAngles[index] ))
+			return;
+		sample->weapon_position[index] = CL_VRSidecarQuantize( relativeWeapon.position[index] * vr_worldscale.value, 8.0f );
+		sample->weapon_angles[index] = CL_VRSidecarQuantize( weaponAngles[index], 128.0f );
+		sample->weapon_velocity[index] = CL_VRSidecarQuantize( weaponVelocity[index] * vr_worldscale.value, 8.0f );
+		sample->offhand_position[index] = CL_VRSidecarQuantize( relativeOffhand.position[index] * vr_worldscale.value, 8.0f );
+		sample->offhand_angles[index] = CL_VRSidecarQuantize( offhandAngles[index], 128.0f );
+	}
+
+	sample->version = VR_USERCMD_SIDECAR_VERSION;
+	sample->flags = VR_USERCMD_SIDECAR_POSE_VALID;
+	if( Cvar_VariableValue( "vr_controller_ladders" ) != 0.0f &&
+		FBitSet( offhand->flags, REF_VR_HAND_AIM_VALID ))
+	{
+		sample->flags |= VR_USERCMD_SIDECAR_LADDER_VALID;
+		sample->ladder_angles[0] = CL_VRSidecarQuantize( offhandAngles[PITCH], 128.0f );
+		sample->ladder_angles[1] = CL_VRSidecarQuantize( offhandAngles[YAW], 128.0f );
+	}
 }
 
 qboolean CL_VRHaptic( int hand, float duration, float frequency, float amplitude )

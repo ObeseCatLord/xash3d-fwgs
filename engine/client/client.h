@@ -30,6 +30,7 @@ GNU General Public License for more details.
 #include "cdll_exp.h"
 #include "screenfade.h"
 #include "protocol.h"
+#include "vr_usercmd_sidecar.h"
 #include "netchan.h"
 #include "net_api.h"
 #include "world.h"
@@ -76,6 +77,7 @@ typedef struct runcmd_s
 	float		frame_lerp;
 
 	usercmd_t		cmd;
+	vr_usercmd_sidecar_t vr_sidecar;
 
 	qboolean		processedfuncs;
 	qboolean		heldback;

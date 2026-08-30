@@ -16,6 +16,7 @@ qboolean CL_VREndEye( int eye );
 void CL_VRApplyHeadPose( ref_viewpass_t *rvp );
 uint64_t CL_VRFrameId( void );
 void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active );
+void CL_VRBuildUsercmdSidecar( const usercmd_t *cmd, vr_usercmd_sidecar_t *sample );
 qboolean CL_VRHaptic( int hand, float duration, float frequency, float amplitude );
 const ref_vr_frame_t *CL_VRGetFrame( void );
 qboolean CL_VRIsActive( void );

@@ -19,6 +19,25 @@ GNU General Public License for more details.
 #include "cl_tent.h"
 #include "pm_local.h"
 #include "studio.h"
+#include "library.h"
+
+static void *cl_vr_sidecar_module;
+static vr_usercmd_sidecar_begin_pm_t cl_vr_sidecar_begin_pm;
+static vr_usercmd_sidecar_end_pm_t cl_vr_sidecar_end_pm;
+
+static void CL_ResolveVRUsercmdSidecarExports( void )
+{
+	if( cl_vr_sidecar_module == clgame.hInstance )
+		return;
+	cl_vr_sidecar_module = clgame.hInstance;
+	cl_vr_sidecar_begin_pm = NULL;
+	cl_vr_sidecar_end_pm = NULL;
+	if( cl_vr_sidecar_module )
+	{
+		cl_vr_sidecar_begin_pm = (vr_usercmd_sidecar_begin_pm_t)COM_GetProcAddress( cl_vr_sidecar_module, VR_USERCMD_SIDECAR_BEGIN_PM_EXPORT );
+		cl_vr_sidecar_end_pm = (vr_usercmd_sidecar_end_pm_t)COM_GetProcAddress( cl_vr_sidecar_module, VR_USERCMD_SIDECAR_END_PM_EXPORT );
+	}
+}
 
 #define MAX_FORWARD			6	// forward probes for set idealpitch
 #define MIN_CORRECTION_DISTANCE	0.25f	// use smoothing if error is > this
@@ -906,7 +925,7 @@ CL_RunUsercmd
 Runs prediction code for user cmd
 =================
 */
-static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u, qboolean runfuncs, double *time, unsigned int random_seed )
+static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u, const vr_usercmd_sidecar_t *vr_sidecar, qboolean runfuncs, double *time, unsigned int random_seed )
 {
 	usercmd_t		cmd;
 
@@ -919,9 +938,9 @@ static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u,
 
 		split = *u;
 		split.msec /= 2;
-		CL_RunUsercmd( from, &temp, &split, runfuncs, time, random_seed );
+		CL_RunUsercmd( from, &temp, &split, vr_sidecar, runfuncs, time, random_seed );
 		split.impulse = split.weaponselect = 0;
-		CL_RunUsercmd( &temp, to, &split, runfuncs, time, random_seed );
+		CL_RunUsercmd( &temp, to, &split, vr_sidecar, runfuncs, time, random_seed );
 		return;
 	}
 
@@ -933,8 +952,15 @@ static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u,
 		// setup playermove state
 		CL_SetupPMove( clgame.pmove, from, &cmd, runfuncs, *time );
 
-		// motor!
+		// motor! The optional sidecar is scoped strictly to this PM dispatch.
+		CL_ResolveVRUsercmdSidecarExports();
+		if( cls.net_protocol == PROTO_CURRENT && FBitSet( cls.extensions, NET_EXT_VR_USERCMD ) &&
+			Cvar_VariableValue( "vr_controller_ladders" ) != 0.0f && vr_sidecar &&
+			vr_sidecar->version == VR_USERCMD_SIDECAR_VERSION && cl_vr_sidecar_begin_pm && cl_vr_sidecar_end_pm )
+			cl_vr_sidecar_begin_pm( vr_sidecar );
 		clgame.dllFuncs.pfnPlayerMove( clgame.pmove, false );
+		if( cl_vr_sidecar_end_pm )
+			cl_vr_sidecar_end_pm();
 
 		// copy results back to client
 		CL_FinishPMove( clgame.pmove, to );
@@ -966,7 +992,7 @@ void CL_MoveSpectatorCamera( void )
 
 	CL_SetUpPlayerPrediction( false, true );
 	CL_SetSolidPlayers( cl.playernum );
-	CL_RunUsercmd( &cls.spectator_state, &cls.spectator_state, &cl.cmd, true, &time, (uint)( time * 100.0 ));
+	CL_RunUsercmd( &cls.spectator_state, &cls.spectator_state, &cl.cmd, NULL, true, &time, (uint)( time * 100.0 ));
 
 	VectorCopy( cls.spectator_state.client.velocity, cl.simvel );
 	VectorCopy( cls.spectator_state.client.origin, cl.simorg );
@@ -1055,7 +1081,7 @@ void CL_PredictMovement( qboolean repredicting )
 		to_cmd = &cl.commands[current_command_mod];
 		runfuncs = ( !repredicting && !to_cmd->processedfuncs );
 
-		CL_RunUsercmd( from, to, &to_cmd->cmd, runfuncs, &time, current_command );
+		CL_RunUsercmd( from, to, &to_cmd->cmd, &to_cmd->vr_sidecar, runfuncs, &time, current_command );
 		VectorCopy( to->playerstate.origin, cl.local.predicted_origins[current_command_mod] );
 		to_cmd->processedfuncs = true;
 

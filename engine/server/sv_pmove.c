@@ -19,9 +19,30 @@ GNU General Public License for more details.
 #include "pm_local.h"
 #include "event_flags.h"
 #include "studio.h"
+#include "library.h"
 
 static qboolean has_update = false;
 static void SV_GetTrueOrigin( sv_client_t *cl, int edictnum, vec3_t origin );
+static void *sv_vr_sidecar_module;
+static vr_usercmd_sidecar_begin_pm_t sv_vr_sidecar_begin_pm;
+static vr_usercmd_sidecar_end_pm_t sv_vr_sidecar_end_pm;
+static vr_usercmd_sidecar_update_pose_t sv_vr_sidecar_update_pose;
+
+static void SV_ResolveVRUsercmdSidecarExports( void )
+{
+	if( sv_vr_sidecar_module == svgame.hInstance )
+		return;
+	sv_vr_sidecar_module = svgame.hInstance;
+	sv_vr_sidecar_begin_pm = NULL;
+	sv_vr_sidecar_end_pm = NULL;
+	sv_vr_sidecar_update_pose = NULL;
+	if( sv_vr_sidecar_module )
+	{
+		sv_vr_sidecar_begin_pm = (vr_usercmd_sidecar_begin_pm_t)COM_GetProcAddress( sv_vr_sidecar_module, VR_USERCMD_SIDECAR_BEGIN_PM_EXPORT );
+		sv_vr_sidecar_end_pm = (vr_usercmd_sidecar_end_pm_t)COM_GetProcAddress( sv_vr_sidecar_module, VR_USERCMD_SIDECAR_END_PM_EXPORT );
+		sv_vr_sidecar_update_pose = (vr_usercmd_sidecar_update_pose_t)COM_GetProcAddress( sv_vr_sidecar_module, VR_USERCMD_SIDECAR_UPDATE_POSE_EXPORT );
+	}
+}
 
 void SV_ClipPMoveToEntity( physent_t *pe, const vec3_t start, vec3_t mins, vec3_t maxs, const vec3_t end, pmtrace_t *tr )
 {
@@ -875,7 +896,7 @@ static void SV_RestoreMoveInterpolant( sv_client_t *cl )
 SV_RunCmd
 ===========
 */
-void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
+void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, const vr_usercmd_sidecar_t *vr_sidecar, int random_seed )
 {
 	edict_t	*clent;
 	double	frametime;
@@ -913,10 +934,10 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	{
 		int	oldmsec = ucmd->msec;
 		cmd.msec = oldmsec / 2;
-		SV_RunCmd( cl, &cmd, random_seed );
+		SV_RunCmd( cl, &cmd, vr_sidecar, random_seed );
 		cmd.msec = oldmsec / 2;
 		cmd.impulse = 0;
-		SV_RunCmd( cl, &cmd, random_seed );
+		SV_RunCmd( cl, &cmd, vr_sidecar, random_seed );
 		return;
 	}
 
@@ -942,6 +963,10 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	if( ucmd->impulse ) clent->v.impulse = ucmd->impulse;
 
 	svgame.globals->time = cl->timebase;
+	SV_ResolveVRUsercmdSidecarExports();
+	if( vr_sidecar && sv_vr_sidecar_update_pose && vr_sidecar->version == VR_USERCMD_SIDECAR_VERSION &&
+		( vr_sidecar->flags & VR_USERCMD_SIDECAR_POSE_VALID ))
+		sv_vr_sidecar_update_pose( clent, vr_sidecar );
 	svgame.dllFuncs.pfnPlayerPreThink( clent );
 	SV_PlayerRunThink( clent, frametime, cl->timebase );
 
@@ -952,8 +977,13 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed )
 	// setup playermove state
 	SV_SetupPMove( svgame.pmove, cl, ucmd, cl->physinfo );
 
-	// motor!
+	// motor! The optional sidecar is scoped strictly to this PM dispatch.
+	if( Cvar_VariableValue( "vr_controller_ladders" ) != 0.0f && vr_sidecar &&
+		vr_sidecar->version == VR_USERCMD_SIDECAR_VERSION && sv_vr_sidecar_begin_pm && sv_vr_sidecar_end_pm )
+		sv_vr_sidecar_begin_pm( vr_sidecar );
 	svgame.dllFuncs.pfnPM_Move( svgame.pmove, true );
+	if( sv_vr_sidecar_end_pm )
+		sv_vr_sidecar_end_pm();
 
 	// copy results back to client
 	SV_FinishPMove( svgame.pmove, cl );

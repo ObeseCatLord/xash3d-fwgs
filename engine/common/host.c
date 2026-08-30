@@ -1205,6 +1205,7 @@ int EXPORT Host_Main( int argc, char **argv, const char *progname, int bChangeGa
 	Cvar_Getf( "ver", FCVAR_READ_ONLY, "shows an engine version", "%i/%s (hw build %i)", PROTOCOL_VERSION, XASH_COMPAT_VERSION, Q_buildnum_compat());
 	Cvar_Getf( "host_ver", FCVAR_READ_ONLY, "detailed info about this build", "%i " XASH_VERSION " %s %s %s", Q_buildnum(), Q_buildos(), Q_buildarch(), g_buildcommit);
 	Cvar_Getf( "host_lowmemorymode", FCVAR_READ_ONLY, "indicates if engine compiled for low RAM consumption (0 - normal, 1 - low engine limits, 2 - low protocol limits)", "%i", XASH_LOW_MEMORY );
+	Cvar_Get( "vr_controller_ladders", "1", FCVAR_ARCHIVE, "use tracked controller direction for VR ladder movement" );
 
 	Cvar_Get( "host_hl25_extended_structs",
 #if SUPPORT_HL25_EXTENDED_STRUCTS

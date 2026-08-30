@@ -282,6 +282,7 @@ extern const char *const svc_goldsrc_strings[svc_lastmsg+1];
 // FWGS extensions
 #define NET_EXT_SPLITSIZE       (1U<<0) // set splitsize by cl_dlmax
 #define NET_EXT_NETCHAN_COOKIE  (1U<<1) // per-connection 64-bit netchan cookie validated on every sequenced packet
+#define NET_EXT_VR_USERCMD      (1U<<2) // versioned per-usercmd VR sidecar follows clc_move commands
 
 // GoldSrc protocol definitions
 #define PROTOCOL_GOLDSRC_VERSION 48

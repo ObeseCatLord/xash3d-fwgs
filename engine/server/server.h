@@ -25,6 +25,7 @@ GNU General Public License for more details.
 #include "pm_defs.h"
 #include "entity_state.h"
 #include "protocol.h"
+#include "vr_usercmd_sidecar.h"
 #include "netchan.h"
 #include "custom.h"
 #include "world.h"
@@ -235,6 +236,7 @@ typedef struct sv_client_s
 	resource_t      resourcesonhand;
 	resource_t      resourcesneeded; // <mapname.res> from client (server downloading)
 	usercmd_t       lastcmd;         // for filling in big drops
+	vr_usercmd_sidecar_t last_vr_sidecar;
 
 	int    packet_loss;
 	double connecttime;
@@ -682,7 +684,7 @@ void SV_ClearGameState( void );
 // sv_pmove.c
 //
 void SV_InitClientMove( void );
-void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, int random_seed );
+void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, const vr_usercmd_sidecar_t *vr_sidecar, int random_seed );
 
 //
 // sv_world.c
