@@ -1044,7 +1044,7 @@ qboolean SV_SpawnServer( const char *mapname, const char *startspot, qboolean ba
 		FS_Close( f );
 	}
 
-	for( i = WORLD_INDEX; i < sv.worldmodel->numsubmodels; i++ )
+	for( i = WORLD_INDEX; sv_precache_bspmodels.value && i < sv.worldmodel->numsubmodels; i++ )
 	{
 		Q_snprintf( sv.model_precache[i+1], sizeof( sv.model_precache[i+1] ), "*%i", i );
 		sv.models[i+1] = Mod_ForName( sv.model_precache[i+1], false, false );
