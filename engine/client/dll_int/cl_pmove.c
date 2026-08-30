@@ -25,6 +25,15 @@ GNU General Public License for more details.
 #define MIN_PREDICTION_EPSILON	0.5f	// complain if error is > this and we have cl_showerror set
 #define MAX_PREDICTION_ERROR		64.0f	// above this is assumed to be a teleport, don't smooth, etc.
 
+/* This callback table is a legacy client-DLL ABI. A former VR fork inserted
+ * fields ahead of these callbacks and turned PM_PointContents calls into
+ * PM_TraceLine calls at runtime. Keep the i386 layout pinned. */
+#if UINTPTR_MAX == UINT32_MAX
+STATIC_ASSERT( sizeof( playermove_t ) == 325072, "playermove_t game ABI changed" );
+STATIC_ASSERT( offsetof( playermove_t, PM_PointContents ) == 324980, "playermove_t callback ABI changed" );
+STATIC_ASSERT( offsetof( playermove_t, PM_TraceLine ) == 324996, "playermove_t callback ABI changed" );
+#endif
+
 /*
 =============
 CL_PushPMStates

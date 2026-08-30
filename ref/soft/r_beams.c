@@ -1204,7 +1204,7 @@ CL_DrawBeams
 draw beam loop
 ==============
 */
-void GAME_EXPORT CL_DrawBeams( int fTrans, BEAM *active_beams )
+void GAME_EXPORT CL_DrawBeams( int fTrans, BEAM *active_beams, float frametime )
 {
 	// pglShadeModel( GL_SMOOTH );
 	// pglDepthMask( fTrans ? GL_FALSE : GL_TRUE );
@@ -1237,7 +1237,7 @@ void GAME_EXPORT CL_DrawBeams( int fTrans, BEAM *active_beams )
 		if( !fTrans && !FBitSet( pBeam->flags, FBEAM_SOLID ))
 			continue;
 
-		R_BeamDraw( pBeam, gp_cl->time - gp_cl->oldtime );
+		R_BeamDraw( pBeam, frametime );
 	}
 
 	// pglShadeModel( GL_FLAT );

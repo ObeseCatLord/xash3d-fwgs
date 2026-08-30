@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include "sound.h"
 #include "input.h" // touch
 #include "platform/platform.h" // GL_UpdateSwapInterval
+#include "vr/vr_client.h"
 
 /*
 ===============
@@ -390,6 +391,7 @@ void V_RenderView( void )
 	// not really critical but allows client.dll to take address of refdef and don't trigger ASan
 	static ref_params_t	rp;
 	ref_viewpass_t	rvp;
+	ref_viewpass_t	base_rvp;
 	int		viewnum = 0;
 
 	if( !cl.video_prepped || ( !ui_renderworld.value && UI_IsVisible() && !cl.background ))
@@ -408,14 +410,30 @@ void V_RenderView( void )
 		V_GetRefParams( &rp, &rvp );
 		V_RefApplyOverview( &rvp );
 		V_ApplyRefUnderwater( &rvp );
+		CL_VRApplyHeadPose( &rvp );
+		base_rvp = rvp;
 
 		if( viewnum == 0 && FBitSet( rvp.flags, RF_ONLY_CLIENTDRAW ))
 		{
 			ref.dllFuncs.R_ClearScreen();
 		}
 
-		GL_RenderFrame( &rvp );
-		S_UpdateFrame( &rvp );
+		if( CL_VRShouldRender() )
+		{
+			int render_seed = (int)CL_VRFrameId();
+
+			for( int eye = 0; eye < REF_VR_MAX_EYES; ++eye )
+			{
+				if( !CL_VRBeginEye( eye ))
+					continue;
+				COM_SetRandomSeed( render_seed );
+				rvp = base_rvp;
+				GL_RenderFrame( &rvp );
+				CL_VREndEye( eye );
+			}
+		}
+		else GL_RenderFrame( &rvp );
+		S_UpdateFrame( &base_rvp );
 		viewnum++;
 
 	} while( rp.nextView );
@@ -525,9 +543,12 @@ V_PostRender
 void V_PostRender( void )
 {
 	qboolean		draw_2d = false;
+	qboolean		vr_ui = false;
 
 	ref.dllFuncs.R_AllowFog( false );
 	ref.dllFuncs.R_Set2DMode( true );
+	if( ref.dllFuncs.R_VRBeginUI )
+		vr_ui = ref.dllFuncs.R_VRBeginUI( refState.width, refState.height );
 
 	if( cls.state == ca_active && cls.signon == SIGNONS && cls.scrshot_action != scrshot_mapshot )
 	{
@@ -570,9 +591,12 @@ void V_PostRender( void )
 		S_ExtraUpdate();
 	}
 
+	if( vr_ui && ref.dllFuncs.R_VREndUI )
+		ref.dllFuncs.R_VREndUI();
 	SCR_MakeScreenShot();
 	ref.dllFuncs.R_AllowFog( true );
 	Platform_SetTimer( 0.0f );
+	CL_VRFrameEnd();
 	ref.dllFuncs.R_EndFrame();
 
 	V_CheckGammaEnd();

@@ -24,6 +24,7 @@ GNU General Public License for more details.
 #include "vid_common.h"
 #include "pm_local.h"
 #include "multi_emulator.h"
+#include "vr/vr_client.h"
 
 #define CL_CONNECTION_TIMEOUT 15.0f
 #define CL_CONNECTION_RETRIES 5
@@ -800,6 +801,7 @@ static void CL_CreateCmd( void )
 	Platform_PreCreateMove();
 	clgame.dllFuncs.CL_CreateMove( host.frametime, cmd, active );
 	IN_EngineAppendMove( host.frametime, cmd, active );
+	CL_VRAppendMove( host.frametime, cmd, active );
 
 	CL_PopPMStates();
 
@@ -3880,7 +3882,11 @@ Host_ClientFrame
 void Host_ClientFrame( void )
 {
 	// if client is not active, do nothing
-	if( !cls.initialized ) return;
+	if( !cls.initialized )
+	{
+		CL_VRFrameEnd();
+		return;
+	}
 	if( cls.key_dest == key_game && cls.state == ca_active && !Con_Visible() )
 		Platform_SetTimer( cl_maxframetime.value );
 
@@ -3923,6 +3929,7 @@ void Host_ClientFrame( void )
 
 	// update the screen
 	SCR_UpdateScreen ();
+	CL_VRFrameEnd();
 
 	// update audio
 	SND_UpdateSound ();

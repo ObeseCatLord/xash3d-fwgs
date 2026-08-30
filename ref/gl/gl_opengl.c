@@ -1263,6 +1263,7 @@ qboolean R_Init( void )
 		Mem_FreePool( &r_temppool );
 		return false;
 	}
+	GL_OpenXRInit();
 
 	// see R_ProcessEntData for tr.entities initialization
 	tr.world = (struct world_static_s *)ENGINE_GET_PARM( PARM_GET_WORLD_PTR );
@@ -1295,6 +1296,7 @@ void R_Shutdown( void )
 	if( !glw_state.initialized )
 		return;
 
+	GL_OpenXRShutdown();
 	GL_RemoveCommands();
 	R_ShutdownImages();
 #if !XASH_GLES && !XASH_GL_STATIC

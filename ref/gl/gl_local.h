@@ -21,6 +21,7 @@ GNU General Public License for more details.
 #include "cvardef.h"
 #include "protocol.h"
 #include "gl_frustum.h"
+#include "gl_openxr.h"
 #include "ref_params.h"
 #include "enginefeatures.h"
 #include "com_strings.h"
@@ -293,7 +294,7 @@ void SCR_TimeRefresh_f( void );
 //
 // gl_beams.c
 //
-void CL_DrawBeams( int fTrans, BEAM *active_beams );
+void CL_DrawBeams( int fTrans, BEAM *active_beams, float frametime );
 
 //
 // gl_cull.c

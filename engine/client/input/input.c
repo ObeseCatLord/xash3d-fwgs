@@ -25,6 +25,8 @@ GNU General Public License for more details.
 #include "vgui_draw.h"
 #include "cursor_type.h"
 #include "platform/platform.h"
+#include "vr/vr_client.h"
+#include "vr/vr_game.h"
 
 static qboolean	in_mouseactive;				// false when not focus app
 static qboolean	in_mouseinitialized;
@@ -670,6 +672,9 @@ Called every frame, even if not generating commands
 */
 void Host_InputFrame( void )
 {
+	CL_VRFrameBegin();
+	CL_VRGameFrame();
+
 	IN_Commands();
 
 	IN_MouseMove();

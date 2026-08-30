@@ -314,7 +314,7 @@ typedef struct image_s
 //
 // gl_beams.c
 //
-void CL_DrawBeams( int fTrans, BEAM *active_beams );
+void CL_DrawBeams( int fTrans, BEAM *active_beams, float frametime );
 
 //
 // gl_decals.c

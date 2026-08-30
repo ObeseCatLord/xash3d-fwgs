@@ -361,7 +361,13 @@ void R_SetupFrustum( void )
 	}
 	else
 	{
-		GL_FrustumInitProj( &RI.frustum, 0.0f, R_GetFarClip(), RI.rvp.fov_x, RI.rvp.fov_y ); // NOTE: we ignore nearplane here (mirrors only)
+		float fov[4];
+		if( GL_OpenXRGetEyeFov( fov ))
+		{
+			GL_FrustumInitProjAsymmetric( &RI.frustum, 0.0f, R_GetFarClip(),
+				tan( fov[0] ), tan( fov[1] ), tan( fov[2] ), tan( fov[3] ));
+		}
+		else GL_FrustumInitProj( &RI.frustum, 0.0f, R_GetFarClip(), RI.rvp.fov_x, RI.rvp.fov_y ); // NOTE: we ignore nearplane here (mirrors only)
 	}
 }
 
@@ -389,6 +395,15 @@ static void R_SetupProjectionMatrix( matrix4x4 m )
 
 	GLfloat xMax = zNear * tan( RI.rvp.fov_x * M_PI_F / 360.0f );
 	GLfloat xMin = -xMax;
+	float fov[4];
+
+	if( GL_OpenXRGetEyeFov( fov ))
+	{
+		xMin = zNear * tan( fov[0] );
+		xMax = zNear * tan( fov[1] );
+		yMin = zNear * tan( fov[2] );
+		yMax = zNear * tan( fov[3] );
+	}
 
 	if( tr.rotation & 1 )
 	{
@@ -858,7 +873,7 @@ static void R_DrawEntitiesOnList( void )
 
 	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
-		gEngfuncs.CL_DrawEFX( tr.frametime, false );
+		gEngfuncs.CL_DrawEFX( GL_OpenXRIsRenderingEye() && !GL_OpenXRIsSecondaryEye() ? 0.0f : tr.frametime, false );
 	}
 
 	GL_CheckForErrors();
@@ -919,7 +934,7 @@ static void R_DrawEntitiesOnList( void )
 	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 	{
 		R_AllowFog( false );
-		gEngfuncs.CL_DrawEFX( tr.frametime, true );
+		gEngfuncs.CL_DrawEFX( GL_OpenXRIsRenderingEye() && !GL_OpenXRIsSecondaryEye() ? 0.0f : tr.frametime, true );
 		R_AllowFog( true );
 	}
 
@@ -929,7 +944,7 @@ static void R_DrawEntitiesOnList( void )
 
 	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_DrawViewModel();
-	gEngfuncs.CL_ExtraUpdate();
+	if( !GL_OpenXRIsSecondaryEye() ) gEngfuncs.CL_ExtraUpdate();
 
 	GL_CheckForErrors();
 }
@@ -952,9 +967,11 @@ void R_RenderScene( void )
 	else tr.frametime = 0.0;
 
 	// begin a new frame
-	tr.framecount++;
-
-	tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
+	if( !GL_OpenXRIsSecondaryEye() )
+	{
+		tr.framecount++;
+		tr.dlightframecount = R_PushDlights( WORLDMODEL, tr.framecount );
+	}
 
 	R_SetupFrustum();
 	R_SetupFrame();
@@ -963,14 +980,15 @@ void R_RenderScene( void )
 
 	R_MarkLeaves();
 	R_DrawFog ();
-	if( FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
+	if( !GL_OpenXRIsSecondaryEye() && FBitSet( RI.rvp.flags, RF_DRAW_WORLD ))
 		R_AnimateRipples();
 
 	R_CheckGLFog();
 	R_DrawWorld();
 	R_CheckFog();
 
-	gEngfuncs.CL_ExtraUpdate ();	// don't let sound get messed up if going slow
+	if( !GL_OpenXRIsSecondaryEye() )
+		gEngfuncs.CL_ExtraUpdate ();	// don't let sound get messed up if going slow
 
 	R_DrawEntitiesOnList();
 
@@ -1064,6 +1082,7 @@ set initial params for renderer
 void R_SetupRefParams( const ref_viewpass_t *rvp )
 {
 	RI.rvp = *rvp;
+	GL_OpenXRApplyEyePose( &RI.rvp );
 
 	RI.farClip = 0;
 }
@@ -1089,20 +1108,20 @@ void R_RenderFrame( const ref_viewpass_t *rvp )
 	{
 		tr.fCustomRendering = true;
 
-		if( gEngfuncs.drawFuncs->GL_RenderFrame( rvp ))
+		if( gEngfuncs.drawFuncs->GL_RenderFrame( &RI.rvp ))
 		{
 			R_GatherPlayerLight( tr.viewent );
-			tr.realframecount++;
+			if( !GL_OpenXRIsSecondaryEye() ) tr.realframecount++;
 			tr.fResetVis = true;
 			return;
 		}
 	}
 
 	tr.fCustomRendering = false;
-	if( !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
+	if( !GL_OpenXRIsSecondaryEye() && !FBitSet( RI.rvp.flags, RF_ONLY_CLIENTDRAW ))
 		R_RunViewmodelEvents();
 
-	tr.realframecount++; // right called after viewmodel events
+	if( !GL_OpenXRIsSecondaryEye() ) tr.realframecount++; // right called after viewmodel events
 	R_RenderScene();
 
 	return;
@@ -1162,6 +1181,8 @@ int CL_FxBlend( cl_entity_t *e )
 {
 	int blend = 0;
 	float offset = ((int)e->index ) * 363.0f; // Use ent index to de-sync these fx
+	qboolean vr_eye = GL_OpenXRIsRenderingEye();
+	qboolean update_effect = !vr_eye || GL_OpenXRIsSecondaryEye();
 
 	switch( e->curstate.renderfx )
 	{
@@ -1178,40 +1199,44 @@ int CL_FxBlend( cl_entity_t *e )
 		blend = e->curstate.renderamt + 0x10 * sin( gp_cl->time * 8 + offset );
 		break;
 	case kRenderFxFadeSlow:
-		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		blend = e->curstate.renderamt;
+		if( update_effect && !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt > 0 )
 				e->curstate.renderamt -= 1;
 			else e->curstate.renderamt = 0;
 		}
-		blend = e->curstate.renderamt;
+		if( !vr_eye ) blend = e->curstate.renderamt;
 		break;
 	case kRenderFxFadeFast:
-		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		blend = e->curstate.renderamt;
+		if( update_effect && !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt > 3 )
 				e->curstate.renderamt -= 4;
 			else e->curstate.renderamt = 0;
 		}
-		blend = e->curstate.renderamt;
+		if( !vr_eye ) blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidSlow:
-		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		blend = e->curstate.renderamt;
+		if( update_effect && !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt < 255 )
 				e->curstate.renderamt += 1;
 			else e->curstate.renderamt = 255;
 		}
-		blend = e->curstate.renderamt;
+		if( !vr_eye ) blend = e->curstate.renderamt;
 		break;
 	case kRenderFxSolidFast:
-		if( !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
+		blend = e->curstate.renderamt;
+		if( update_effect && !FBitSet( RI.rvp.flags, RF_DRAW_CUBEMAP ))
 		{
 			if( e->curstate.renderamt < 252 )
 				e->curstate.renderamt += 4;
 			else e->curstate.renderamt = 255;
 		}
-		blend = e->curstate.renderamt;
+		if( !vr_eye ) blend = e->curstate.renderamt;
 		break;
 	case kRenderFxStrobeSlow:
 		blend = 20 * sin( gp_cl->time * 4 + offset );
@@ -1258,7 +1283,12 @@ int CL_FxBlend( cl_entity_t *e )
 			e->curstate.renderamt = 180;
 			if( dist <= 100 ) blend = e->curstate.renderamt;
 			else blend = (int) ((1.0f - ( dist - 100 ) * ( 1.0f / 400.0f )) * e->curstate.renderamt );
-			blend += gEngfuncs.COM_RandomLong( -32, 31 );
+			if( vr_eye )
+			{
+				uint32_t noise = (uint32_t)e->index * 1103515245u + (uint32_t)( gp_cl->time * 1000.0 ) + 12345u;
+				blend += (int)(( noise >> 16 ) & 63u ) - 32;
+			}
+			else blend += gEngfuncs.COM_RandomLong( -32, 31 );
 		}
 		break;
 	}

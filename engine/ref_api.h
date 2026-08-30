@@ -78,7 +78,7 @@ GNU General Public License for more details.
 //     <= 255 bytes, dropping per-allocation filename/fileline tracking.
 // 18. PARM_GET_{LIGHT,SCREEN,LINEAR}GAMMATABLE_PTR now point to uint16_t arrays instead of uint.
 //     Their entries never exceed 1023, so the narrowing is lossless.
-#define REF_API_VERSION 18
+#define REF_API_VERSION 19
 
 #define TF_SKY		(TF_SKYSIDE|TF_NOMIPMAP|TF_ALLOW_NEAREST)
 #define TF_FONT		(TF_NOMIPMAP|TF_CLAMP|TF_ALLOW_NEAREST)
@@ -245,6 +245,74 @@ typedef enum ref_graphic_apis_e
 	REF_GL,		// create GL context
 	REF_D3D,	// Direct3D
 } ref_graphic_apis_t;
+
+#define REF_VR_FRAME_VERSION 4
+#define REF_VR_MAX_EYES 2
+#define REF_VR_MAX_HANDS 2
+
+#define REF_VR_HAND_LEFT 0
+#define REF_VR_HAND_RIGHT 1
+
+typedef enum ref_vr_frame_flags_e
+{
+	REF_VR_FRAME_SESSION_ACTIVE = BIT( 0 ),
+	REF_VR_FRAME_SHOULD_RENDER  = BIT( 1 ),
+	REF_VR_FRAME_HEAD_VALID     = BIT( 2 ),
+	REF_VR_FRAME_FOCUSED        = BIT( 3 ),
+	REF_VR_FRAME_ACTIONS_VALID  = BIT( 4 ),
+	REF_VR_FRAME_REFERENCE_CHANGED = BIT( 5 ),
+} ref_vr_frame_flags_t;
+
+/* OpenXR-independent renderer-to-engine snapshot. Positions and basis vectors
+ * use Xash coordinates (forward/left/up); positions are measured in metres. */
+typedef struct ref_vr_pose_s
+{
+	vec3_t position;
+	vec3_t forward;
+	vec3_t right;
+	vec3_t up;
+} ref_vr_pose_t;
+
+typedef enum ref_vr_hand_flags_e
+{
+	REF_VR_HAND_GRIP_VALID = BIT( 0 ),
+	REF_VR_HAND_AIM_VALID  = BIT( 1 ),
+	REF_VR_HAND_UI_VALID   = BIT( 2 ),
+} ref_vr_hand_flags_t;
+
+typedef enum ref_vr_button_bits_e
+{
+	REF_VR_BUTTON_PRIMARY   = BIT( 0 ),
+	REF_VR_BUTTON_SECONDARY = BIT( 1 ),
+	REF_VR_BUTTON_MENU      = BIT( 2 ),
+	REF_VR_BUTTON_STICK     = BIT( 3 ),
+} ref_vr_button_bits_t;
+
+typedef struct ref_vr_hand_s
+{
+	uint32_t flags;
+	uint32_t buttons;
+	float trigger;
+	float squeeze;
+	float stick[2];
+	/* Normalized coordinates on the head-relative UI quad. */
+	float ui_cursor[2];
+	ref_vr_pose_t grip;
+	ref_vr_pose_t aim;
+	vec3_t linear_velocity;
+	vec3_t angular_velocity;
+} ref_vr_hand_t;
+
+typedef struct ref_vr_frame_s
+{
+	uint32_t version;
+	uint32_t struct_size;
+	uint64_t frame_id;
+	uint32_t flags;
+	uint32_t eye_count;
+	ref_vr_pose_t head;
+	ref_vr_hand_t hands[REF_VR_MAX_HANDS];
+} ref_vr_frame_t;
 
 typedef enum
 {
@@ -603,7 +671,7 @@ typedef struct ref_interface_s
 	// efx implementation
 	void (*CL_DrawParticles)( double frametime, particle_t *particles, float partsize );
 	void (*CL_DrawTracers)( double frametime, particle_t *tracers );
-	void (*CL_DrawBeams)( int fTrans , BEAM *beams );
+	void (*CL_DrawBeams)( int fTrans, BEAM *beams, float frametime );
 
 	// Xash3D Render Interface
 	intptr_t		(*RefGetParm)( int parm, int arg );	// generic
@@ -655,6 +723,15 @@ typedef struct ref_interface_s
 
 	// vgui drawing implementation
 	void	(*VGUI_SetupDrawing)( qboolean rect );
+
+	// Optional desktop VR compositor. A successful begin must be paired with end.
+	qboolean (*R_VRFrameBegin)( ref_vr_frame_t *frame );
+	qboolean (*R_VRBeginEye)( int eye );
+	qboolean (*R_VREndEye)( int eye, int source_width, int source_height );
+	qboolean (*R_VRBeginUI)( int width, int height );
+	void (*R_VREndUI)( void );
+	void (*R_VRFrameEnd)( void );
+	qboolean (*R_VRHaptic)( int hand, float duration, float frequency, float amplitude );
 } ref_interface_t;
 
 typedef int (*REFAPI)( int version, ref_interface_t *pFunctionTable, ref_api_t* engfuncs, ref_globals_t *pGlobals );

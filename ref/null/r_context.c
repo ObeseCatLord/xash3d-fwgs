@@ -219,7 +219,7 @@ static void CL_DrawTracers( double frametime, particle_t *tracers )
 	;
 }
 
-static void CL_DrawBeams( int fTrans, BEAM *beams )
+static void CL_DrawBeams( int fTrans, BEAM *beams, float frametime )
 {
 	;
 }
