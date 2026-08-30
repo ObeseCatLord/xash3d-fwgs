@@ -465,7 +465,7 @@ static void SV_ConnectClient( netadr_t from )
 	newcl->frames = frames;
 	newcl->userid = g_userid++;	// create unique userid
 	newcl->state = cs_connected;	// now expect "spawn" command
-	newcl->extensions = FBitSet( extensions, NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE );
+	newcl->extensions = FBitSet( extensions, NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE | NET_EXT_VR_USERCMD );
 	Q_strncpy( newcl->useragent, protinfo, sizeof( newcl->useragent ));
 
 	// HACKHACK: can hear all players by default to avoid issues
@@ -3226,6 +3226,88 @@ static qboolean SV_PlayerIsFrozen( const edict_t *pClient )
 	return false;
 }
 
+static qboolean SV_ReadVRUsercmdSidecars( sizebuf_t *msg, vr_usercmd_sidecar_t *samples, int totalcmds )
+{
+	int version, bytes, i, field;
+
+	if( MSG_GetNumBitsLeft( msg ) < 16 )
+		return false;
+	version = MSG_ReadByte( msg );
+	bytes = MSG_ReadByte( msg );
+	if( bytes <= 0 || totalcmds > MSG_GetNumBitsLeft( msg ) / ( bytes * 8 ))
+		return false;
+	for( i = totalcmds - 1; i >= 0; --i )
+	{
+		byte record[255];
+		if( !MSG_ReadBytes( msg, record, sizeof( record ), bytes ))
+			return false;
+		if( version != VR_USERCMD_SIDECAR_VERSION || bytes != VR_USERCMD_SIDECAR_WIRE_BYTES )
+			continue;
+		samples[i].version = (uint8_t)version;
+		samples[i].flags = record[0] & ( VR_USERCMD_SIDECAR_LADDER_VALID | VR_USERCMD_SIDECAR_POSE_VALID );
+		for( field = 0; field < 2; ++field ) samples[i].ladder_angles[field] = (int16_t)( record[1 + field * 2] | record[2 + field * 2] << 8 );
+		for( field = 0; field < 3; ++field ) samples[i].weapon_position[field] = (int16_t)( record[5 + field * 2] | record[6 + field * 2] << 8 );
+		for( field = 0; field < 3; ++field ) samples[i].weapon_angles[field] = (int16_t)( record[11 + field * 2] | record[12 + field * 2] << 8 );
+		for( field = 0; field < 3; ++field ) samples[i].weapon_velocity[field] = (int16_t)( record[17 + field * 2] | record[18 + field * 2] << 8 );
+		for( field = 0; field < 3; ++field ) samples[i].offhand_position[field] = (int16_t)( record[23 + field * 2] | record[24 + field * 2] << 8 );
+		for( field = 0; field < 3; ++field ) samples[i].offhand_angles[field] = (int16_t)( record[29 + field * 2] | record[30 + field * 2] << 8 );
+	}
+	return true;
+}
+
+#ifdef XASH_ENGINE_TESTS
+#include "tests.h"
+
+static void Test_WriteVRUsercmdSidecarRecord( sizebuf_t *msg, byte flags, int16_t ladderPitch, int16_t ladderYaw )
+{
+	byte record[VR_USERCMD_SIDECAR_WIRE_BYTES] = { 0 };
+	record[0] = flags;
+	record[1] = ladderPitch & 0xff;
+	record[2] = ( ladderPitch >> 8 ) & 0xff;
+	record[3] = ladderYaw & 0xff;
+	record[4] = ( ladderYaw >> 8 ) & 0xff;
+	MSG_WriteBytes( msg, record, sizeof( record ));
+}
+
+void Test_RunVRUsercmdSidecar( void )
+{
+	byte data[2 + VR_USERCMD_SIDECAR_WIRE_BYTES * 2] = { 0 };
+	vr_usercmd_sidecar_t samples[2] = { 0 };
+	sizebuf_t msg;
+
+	MSG_Init( &msg, __func__, data, sizeof( data ));
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION );
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
+	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1024, -2048 );
+	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_POSE_VALID, -512, 768 );
+	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
+	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
+	TASSERT_EQi( samples[1].flags, VR_USERCMD_SIDECAR_LADDER_VALID );
+	TASSERT_EQi( samples[1].ladder_angles[0], 1024 );
+	TASSERT_EQi( samples[1].ladder_angles[1], -2048 );
+	TASSERT_EQi( samples[0].flags, VR_USERCMD_SIDECAR_POSE_VALID );
+	TASSERT_EQi( samples[0].ladder_angles[0], -512 );
+	TASSERT_EQi( samples[0].ladder_angles[1], 768 );
+
+	MSG_Init( &msg, __func__, data, sizeof( data ));
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION + 1 );
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
+	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1, 1 );
+	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1, 1 );
+	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
+	memset( samples, 0, sizeof( samples ));
+	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
+	TASSERT_EQi( samples[0].flags, 0 );
+	TASSERT_EQi( samples[1].flags, 0 );
+
+	MSG_Init( &msg, __func__, data, sizeof( data ));
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION );
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
+	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
+	TASSERT( !SV_ReadVRUsercmdSidecars( &msg, samples, 1 ));
+}
+#endif
+
 /*
 ==================
 SV_ParseClientMove
@@ -3243,6 +3325,7 @@ static void SV_ParseClientMove( sv_client_t *cl, sizebuf_t *msg )
 	const usercmd_t	nullcmd = { 0 }, *from = &nullcmd; // first cmd are starting from null-compressed usercmd_t
 	client_frame_t  *frame = &cl->frames[cl->netchan.incoming_acknowledged & SV_UPDATE_MASK];
 	usercmd_t       cmds[CMD_BACKUP] = { 0 }, *to;
+	vr_usercmd_sidecar_t vr_sidecars[CMD_BACKUP] = { 0 };
 	edict_t         *player = cl->edict;
 	model_t         *model;
 
@@ -3268,6 +3351,13 @@ static void SV_ParseClientMove( sv_client_t *cl, sizebuf_t *msg )
 		to = &cmds[i];
 		MSG_ReadDeltaUsercmd( msg, from, to );
 		from = to; // get new baseline
+	}
+
+	if( FBitSet( cl->extensions, NET_EXT_VR_USERCMD ) && !SV_ReadVRUsercmdSidecars( msg, vr_sidecars, totalcmds ))
+	{
+		Con_Reportf( S_ERROR "%s: malformed VR usercmd sidecar from %s\n", __func__, cl->name );
+		SV_DropClient( cl, false );
+		return;
 	}
 
 	if( cl->state != cs_spawned )
@@ -3322,21 +3412,21 @@ static void SV_ParseClientMove( sv_client_t *cl, sizebuf_t *msg )
 	{
 		while( net_drop > numbackup )
 		{
-			SV_RunCmd( cl, &cl->lastcmd, 0 );
+			SV_RunCmd( cl, &cl->lastcmd, &cl->last_vr_sidecar, 0 );
 			net_drop--;
 		}
 
 		while( net_drop > 0 )
 		{
 			i = numcmds + net_drop - 1;
-			SV_RunCmd( cl, &cmds[i], cl->netchan.incoming_sequence - i );
+			SV_RunCmd( cl, &cmds[i], &vr_sidecars[i], cl->netchan.incoming_sequence - i );
 			net_drop--;
 		}
 	}
 
 	for( i = numcmds - 1; i >= 0; i-- )
 	{
-		SV_RunCmd( cl, &cmds[i], cl->netchan.incoming_sequence - i );
+		SV_RunCmd( cl, &cmds[i], &vr_sidecars[i], cl->netchan.incoming_sequence - i );
 	}
 
 	// was player kicked? stop here
@@ -3344,6 +3434,7 @@ static void SV_ParseClientMove( sv_client_t *cl, sizebuf_t *msg )
 		return;
 
 	cl->lastcmd = cmds[0];
+	cl->last_vr_sidecar = vr_sidecars[0];
 
 	// adjust latency time by 1/2 last client frame since
 	// the message probably arrived 1/2 through client's frame loop

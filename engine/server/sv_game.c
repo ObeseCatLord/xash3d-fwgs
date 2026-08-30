@@ -3821,7 +3821,7 @@ static void GAME_EXPORT pfnRunPlayerMove( edict_t *pClient, const float *viewang
 
 	seed = COM_RandomLong( 0, 0x7fffffff ); // full range
 
-	SV_RunCmd( cl, &cmd, seed );
+	SV_RunCmd( cl, &cmd, NULL, seed );
 
 	cl->lastcmd = cmd;
 	sv.current_client = oldcl;

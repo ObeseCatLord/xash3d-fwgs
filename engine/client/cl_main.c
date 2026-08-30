@@ -802,6 +802,7 @@ static void CL_CreateCmd( void )
 	clgame.dllFuncs.CL_CreateMove( host.frametime, cmd, active );
 	IN_EngineAppendMove( host.frametime, cmd, active );
 	CL_VRAppendMove( host.frametime, cmd, active );
+	if( !cls.demoplayback ) CL_VRBuildUsercmdSidecar( cmd, &pcmd->vr_sidecar );
 
 	CL_PopPMStates();
 
@@ -849,6 +850,25 @@ void CL_WriteUsercmd( connprotocol_t proto, sizebuf_t *msg, int from, int to )
 		MSG_EndBitWriting( msg );
 	}
 	else MSG_WriteDeltaUsercmd( msg, f, t );
+}
+
+static void CL_WriteVRUsercmdSidecars( sizebuf_t *msg, int numcmds )
+{
+	int i, field;
+
+	MSG_WriteByte( msg, VR_USERCMD_SIDECAR_VERSION );
+	MSG_WriteByte( msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
+	for( i = numcmds - 1; i >= 0; --i )
+	{
+		const vr_usercmd_sidecar_t *sample = &cl.commands[( cls.netchan.outgoing_sequence - i ) & CL_UPDATE_MASK].vr_sidecar;
+		MSG_WriteByte( msg, sample->version == VR_USERCMD_SIDECAR_VERSION ? sample->flags : 0 );
+		for( field = 0; field < 2; ++field ) MSG_WriteShort( msg, sample->ladder_angles[field] );
+		for( field = 0; field < 3; ++field ) MSG_WriteShort( msg, sample->weapon_position[field] );
+		for( field = 0; field < 3; ++field ) MSG_WriteShort( msg, sample->weapon_angles[field] );
+		for( field = 0; field < 3; ++field ) MSG_WriteShort( msg, sample->weapon_velocity[field] );
+		for( field = 0; field < 3; ++field ) MSG_WriteShort( msg, sample->offhand_position[field] );
+		for( field = 0; field < 3; ++field ) MSG_WriteShort( msg, sample->offhand_angles[field] );
+	}
 }
 
 /*
@@ -973,6 +993,9 @@ static void CL_WritePacket( void )
 			CL_WriteUsercmd( proto, &buf, from, to );
 			from = to;
 		}
+
+		if( proto == PROTO_CURRENT && FBitSet( cls.extensions, NET_EXT_VR_USERCMD ))
+			CL_WriteVRUsercmdSidecars( &buf, numcmds );
 
 		// finalize message
 		if( proto == PROTO_GOLDSRC )
@@ -1277,7 +1300,7 @@ static void CL_SendConnectPacket( connprotocol_t proto, int challenge )
 	else
 	{
 		const char *qport = Cvar_VariableString( "net_qport" );
-		int extensions = adrtype == NA_LOOPBACK ? 0 : ( NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE );
+		int extensions = NET_EXT_VR_USERCMD | ( adrtype == NA_LOOPBACK ? 0 : ( NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE ));
 		string key;
 
 		ID_GetMD5ForAddress( key, adr, sizeof( key ));
