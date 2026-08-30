@@ -221,6 +221,12 @@ def build(bld):
 		# but dedicated server is enabled. They're both called 'xash' in this case
 		server_source = copy(source)
 		server_libs = copy(libs)
+		server_linkflags = []
+		# SV_TargetedSoundV1 is looked up by optional game-DLL code with dlsym.
+		# Default visibility alone does not place an ELF executable symbol in
+		# .dynsym, so export just this extension instead of all engine symbols.
+		if bld.env.DEST_OS == 'linux':
+			server_linkflags = ['-Wl,--export-dynamic-symbol=SV_TargetedSoundV1']
 		bld.program(
 			source = server_source,
 			target = 'xash',
@@ -228,6 +234,7 @@ def build(bld):
 			includes = includes,
 			defines = 'XASH_ENABLE_MAIN=1 XASH_DEDICATED=1',
 			rpath = bld.env.DEFAULT_RPATH,
+			linkflags = server_linkflags,
 			install_path = bld.env.BINDIR,
 		)
 
@@ -242,6 +249,7 @@ def build(bld):
 				includes = includes,
 				features = 'test',
 				defines = 'XASH_ENABLE_MAIN=1 XASH_DEDICATED=1 XASH_ENGINE_TESTS=1',
+				linkflags = server_linkflags,
 				rpath = bld.env.DEFAULT_RPATH,
 				install_path = None,
 				ut_str = '${SRC[0].abspath()} -dev 2 -runtests',

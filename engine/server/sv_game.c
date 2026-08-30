@@ -2065,6 +2065,41 @@ void GAME_EXPORT SV_StartSound( edict_t *ent, int chan, const char *sample, floa
 
 /*
 =================
+SV_TargetedSoundV1
+
+An optional game-DLL extension for mods that must select recipients themselves.
+The game DLL performs policy such as PAS filtering; the engine owns native
+svc_sound serialization and the reliable/unreliable client queue.
+=================
+*/
+int EXPORT SV_TargetedSoundV1( edict_t *source, edict_t *target, int chan, const char *sample, float vol, float attn, int flags, int pitch, const vec3_t origin, qboolean reliable )
+{
+	sv_client_t	*cl;
+
+	if( !origin || !svs.initialized || sv.state == ss_dead )
+		return 0;
+
+	cl = SV_ClientFromEdict( target, false );
+	if( !cl || cl->state == cs_free || cl->state == cs_zombie || !cl->edict || FBitSet( cl->flags, FCL_FAKECLIENT ))
+		return 0;
+
+	// This mirrors MSG_ONE_UNRELIABLE; reliable system messages may reach a
+	// connecting client, while unreliable messages wait for a spawned client.
+	if( !reliable && cl->state != cs_spawned )
+		return 0;
+
+	if( !SV_BuildSoundMsg( &sv.multicast, source, chan, sample, vol * 255, attn, flags, pitch, origin ))
+		return 0;
+
+	if( reliable ) MSG_WriteBits( &cl->netchan.message, MSG_GetData( &sv.multicast ), MSG_GetNumBitsWritten( &sv.multicast ));
+	else MSG_WriteBits( &cl->datagram, MSG_GetData( &sv.multicast ), MSG_GetNumBitsWritten( &sv.multicast ));
+	MSG_Clear( &sv.multicast );
+
+	return 1;
+}
+
+/*
+=================
 pfnEmitAmbientSound
 
 =================
