@@ -29,6 +29,9 @@ static CVAR_DEFINE_AUTO( vr_use_gesture_boundary, "0.35", FCVAR_ARCHIVE, "horizo
 static CVAR_DEFINE_AUTO( vr_controller_tracking_haptic, "1", FCVAR_ARCHIVE, "haptic feedback for tracked interaction boundaries" );
 static CVAR_DEFINE_AUTO( vr_backpack_weapon, "weapon_crowbar", FCVAR_ARCHIVE, "weapon selected by the dominant-hand backpack gesture" );
 static CVAR_DEFINE_AUTO( vr_lasersight, "0", FCVAR_ARCHIVE, "laser sight mode" );
+static CVAR_DEFINE_AUTO( vr_height_adjust, "0", FCVAR_ARCHIVE, "additional VR eye height in metres" );
+static CVAR_DEFINE_AUTO( vr_headtorch, "0", FCVAR_ARCHIVE, "attach the flashlight beam to the HMD" );
+static CVAR_DEFINE_AUTO( vr_reversetorch, "0", FCVAR_ARCHIVE, "reverse the tracked flashlight direction" );
 
 static ref_vr_frame_t vr_frame;
 static ref_vr_pose_t vr_center;
@@ -65,6 +68,9 @@ static qboolean vr_one_controller_running;
 static qboolean vr_one_controller_duck_toggled;
 static double vr_one_controller_jump_time;
 static float vr_one_controller_stick[4][2];
+static vec3_t vr_body_view_origin;
+static float vr_body_view_yaw;
+static qboolean vr_body_view_valid;
 
 static void CL_VRTransformVector( const vec3_t in, const ref_vr_pose_t *origin, vec3_t out );
 
@@ -163,6 +169,7 @@ static void CL_VRResetInputState( qboolean release_menu )
 	vr_one_controller_duck_toggled = false;
 	vr_one_controller_jump_time = 0.0;
 	memset( vr_one_controller_stick, 0, sizeof( vr_one_controller_stick ));
+	vr_body_view_valid = false;
 }
 
 static void CL_VRTransformVector( const vec3_t in, const ref_vr_pose_t *origin, vec3_t out )
@@ -586,10 +593,17 @@ void CL_VRApplyHeadPose( ref_viewpass_t *rvp )
 	vec3_t composed_forward, composed_right, composed_up;
 
 	if( !rvp || !vr_center_valid || !FBitSet( vr_frame.flags, REF_VR_FRAME_HEAD_VALID ))
+	{
+		vr_body_view_valid = false;
 		return;
+	}
 
 	CL_VRRelativePose( &vr_frame.head, &vr_center, &relative );
+	VectorCopy( rvp->vieworigin, vr_body_view_origin );
+	vr_body_view_yaw = rvp->viewangles[YAW];
+	vr_body_view_valid = true;
 	AngleVectors( rvp->viewangles, body_forward, body_right, body_up );
+	VectorMA( rvp->vieworigin, vr_height_adjust.value * vr_worldscale.value, body_up, rvp->vieworigin );
 	VectorMA( rvp->vieworigin, relative.position[0] * vr_worldscale.value, body_forward, rvp->vieworigin );
 	VectorMA( rvp->vieworigin, -relative.position[1] * vr_worldscale.value, body_right, rvp->vieworigin );
 	VectorMA( rvp->vieworigin, relative.position[2] * vr_worldscale.value, body_up, rvp->vieworigin );
@@ -849,4 +863,44 @@ qboolean CL_VRGetRecenter( ref_vr_pose_t *center )
 float CL_VRGetWorldScale( void )
 {
 	return vr_worldscale.value;
+}
+
+qboolean CL_VRGetFlashlightPose( vec3_t origin, vec3_t forward )
+{
+	ref_vr_pose_t relative;
+	const ref_vr_pose_t *pose;
+	float sine, cosine;
+	vec3_t local_origin;
+
+	if( !CL_VRIsActive() || !vr_center_valid || !vr_body_view_valid )
+		return false;
+
+	if( vr_headtorch.value != 0.0f )
+	{
+		if( !FBitSet( vr_frame.flags, REF_VR_FRAME_HEAD_VALID ))
+			return false;
+		pose = &vr_frame.head;
+	}
+	else
+	{
+		int dominant = vr_control_scheme.value >= 10.0f ? REF_VR_HAND_LEFT : REF_VR_HAND_RIGHT;
+		int offhand = dominant == REF_VR_HAND_LEFT ? REF_VR_HAND_RIGHT : REF_VR_HAND_LEFT;
+		if( !FBitSet( vr_frame.hands[offhand].flags, REF_VR_HAND_AIM_VALID ))
+			return false;
+		pose = &vr_frame.hands[offhand].aim;
+	}
+
+	CL_VRRelativePose( pose, &vr_center, &relative );
+	SinCos( DEG2RAD( vr_body_view_yaw ), &sine, &cosine );
+	local_origin[0] = relative.position[0] * cosine - relative.position[1] * sine;
+	local_origin[1] = relative.position[0] * sine + relative.position[1] * cosine;
+	local_origin[2] = relative.position[2];
+	VectorMA( vr_body_view_origin, vr_worldscale.value, local_origin, origin );
+	forward[0] = relative.forward[0] * cosine - relative.forward[1] * sine;
+	forward[1] = relative.forward[0] * sine + relative.forward[1] * cosine;
+	forward[2] = relative.forward[2];
+	if( vr_reversetorch.value != 0.0f )
+		VectorNegate( forward, forward );
+	VectorNormalize( forward );
+	return true;
 }
