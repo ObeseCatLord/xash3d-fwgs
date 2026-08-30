@@ -611,6 +611,15 @@ void SV_SetMinMaxSize( edict_t *e, const float *min, const float *max, qboolean 
 void SV_PlaybackEventFull( int flags, const edict_t *pInvoker, word eventindex, float delay, float *origin,
 	float *angles, float fparam1, float fparam2, int iparam1, int iparam2, int bparam1, int bparam2 );
 int SV_BuildSoundMsg( sizebuf_t *msg, edict_t *ent, int chan, const char *sample, int vol, float attn, int flags, int pitch, const vec3_t pos );
+/*
+SV_TargetedSoundV1
+
+Optional game-DLL extension. The target is an exact client edict; flags use
+Xash's native sound protocol bits and reliable selects the netchan or datagram
+queue. This is deliberately a C symbol rather than an enginefuncs_t entry so
+existing GoldSrc game-DLL ABI layouts remain unchanged.
+*/
+int EXPORT SV_TargetedSoundV1( edict_t *source, edict_t *target, int chan, const char *sample, float vol, float attn, int flags, int pitch, const vec3_t origin, qboolean reliable );
 qboolean SV_BoxInPVS( const vec3_t org, const vec3_t absmin, const vec3_t absmax );
 void SV_QueueChangeLevel( const char *level, const char *landname );
 void SV_WriteEntityPatch( const char *filename );
