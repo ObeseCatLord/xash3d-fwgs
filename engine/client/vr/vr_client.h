@@ -21,5 +21,6 @@ const ref_vr_frame_t *CL_VRGetFrame( void );
 qboolean CL_VRIsActive( void );
 qboolean CL_VRGetRecenter( ref_vr_pose_t *center );
 float CL_VRGetWorldScale( void );
+qboolean CL_VRGetFlashlightPose( vec3_t origin, vec3_t forward );
 
 #endif /* VR_CLIENT_H */

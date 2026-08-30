@@ -19,6 +19,7 @@ GNU General Public License for more details.
 #include "entity_types.h"
 #include "triangleapi.h"
 #include "cl_tent.h"
+#include "vr/vr_client.h"
 #include "pm_local.h"
 #include "studio.h"
 #include "wadfile.h"	// acess decal size
@@ -2611,8 +2612,14 @@ static void CL_UpdateFlashlight( cl_entity_t *ent )
 	if( ent->index == ( cl.playernum + 1 ))
 	{
 		// local player case
-		AngleVectors( cl.viewangles, forward, NULL, NULL );
-		VectorCopy( cl.viewheight, view_ofs );
+		if( CL_VRGetFlashlightPose( vecSrc, forward ))
+			VectorClear( view_ofs );
+		else
+		{
+			AngleVectors( cl.viewangles, forward, NULL, NULL );
+			VectorCopy( cl.viewheight, view_ofs );
+			VectorAdd( ent->origin, view_ofs, vecSrc );
+		}
 	}
 	else	// non-local player case
 	{
@@ -2632,7 +2639,8 @@ static void CL_UpdateFlashlight( cl_entity_t *ent )
 		else view_ofs[2] = 28.0f;		// DEFAULT_VIEWHEIGHT
 	}
 
-	VectorAdd( ent->origin, view_ofs, vecSrc );
+	if( ent->index != ( cl.playernum + 1 ))
+		VectorAdd( ent->origin, view_ofs, vecSrc );
 	VectorMA( vecSrc, FLASHLIGHT_DISTANCE, forward, vecEnd );
 
 	trace = CL_TraceLine( vecSrc, vecEnd, PM_STUDIO_BOX );
