@@ -37,6 +37,7 @@ GNU General Public License for more details.
 #include "vgui_draw.h"
 #include "sound.h"		// SND_STOP_LOOPING
 #include "platform/platform.h"
+#include "vr/vr_game.h"
 
 #define MAX_LINELENGTH	80
 #define TEXT_MSGNAME	"TextMessage"
@@ -3894,6 +3895,7 @@ void CL_UnloadProgs( void )
 	Mod_ClearUserData();
 
 	// NOTE: HLFX 0.5 has strange bug: hanging on exit if no map was loaded
+	CL_VRGameShutdown();
 	if( Q_stricmp( GI->gamefolder, "hlfx" ) || GI->version != 0.5f )
 		clgame.dllFuncs.pfnShutdown();
 
@@ -4088,6 +4090,7 @@ qboolean CL_LoadProgs( const char *name )
 	}
 
 	Cvar_FullSet( "host_clientloaded", "1", FCVAR_READ_ONLY );
+	CL_VRGameInit();
 
 	clgame.maxRemapInfos = 0; // will be alloc on first call CL_InitEdicts();
 	clgame.maxEntities = 2; // world + localclient (have valid entities not in game)

@@ -575,5 +575,12 @@ const ref_interface_t gReffuncs =
 	R_FillTriAPI,
 
 	VGUI_SetupDrawing,
-};
 
+	GL_OpenXRFrameBegin,
+	GL_OpenXRBeginEye,
+	GL_OpenXREndEye,
+	GL_OpenXRBeginUI,
+	GL_OpenXREndUI,
+	GL_OpenXRFrameEnd,
+	GL_OpenXRHaptic,
+};

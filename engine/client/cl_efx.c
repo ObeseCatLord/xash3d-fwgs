@@ -2080,7 +2080,7 @@ void CL_DrawEFX( float time, qboolean fTrans )
 {
 	CL_FreeDeadBeams();
 	if( cl_draw_beams.value )
-		ref.dllFuncs.CL_DrawBeams( fTrans, cl_active_beams );
+		ref.dllFuncs.CL_DrawBeams( fTrans, cl_active_beams, time );
 
 	if( fTrans )
 	{

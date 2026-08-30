@@ -79,8 +79,8 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 			VectorScale( RI.cull_vright, size, right );
 			VectorScale( RI.cull_vup, size, up );
 
-			p->color = bound( 0, p->color, 255 );
-			color24 color = tr.palette[p->color];
+			int color_index = bound( 0, p->color, 255 );
+			color24 color = tr.palette[color_index];
 
 			int alpha = 255 * (p->die - gp_cl->time) * 16.0f;
 			if( alpha > 255 || p->type == pt_static )
@@ -99,7 +99,8 @@ void CL_DrawParticles( double frametime, particle_t *cl_active_particles, float 
 			r_stats.c_particle_count++;
 		}
 
-		gEngfuncs.CL_ThinkParticle( frametime, p );
+		if( frametime != 0.0 )
+			gEngfuncs.CL_ThinkParticle( frametime, p );
 	}
 
 	pglEnd();
@@ -220,12 +221,11 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 			VectorAdd( verts[0], delta, verts[2] );
 			VectorAdd( verts[1], delta, verts[3] );
 
-			if( p->color < 0 || p->color >= sizeof( gTracerColors ) / sizeof( gTracerColors[0] ))
-			{
-				p->color = TRACER_COLORINDEX_DEFAULT;
-			}
+			int color_index = p->color;
+			if( color_index < 0 || color_index >= sizeof( gTracerColors ) / sizeof( gTracerColors[0] ))
+				color_index = TRACER_COLORINDEX_DEFAULT;
 
-			color24 color = gTracerColors[p->color];
+			color24 color = gTracerColors[color_index];
 			pglColor4ub( color.r, color.g, color.b, p->unused );
 
 				pglTexCoord2f( 0.0f, 0.8f );
@@ -238,21 +238,24 @@ void CL_DrawTracers( double frametime, particle_t *cl_active_tracers )
 				pglVertex3fv( verts[0] );
 		}
 
-		// evaluate position
-		VectorMA( p->org, frametime, p->vel, p->org );
-
-		if( p->type == pt_grav )
+		if( frametime != 0.0 )
 		{
-			p->vel[0] *= scale;
-			p->vel[1] *= scale;
-			p->vel[2] -= gravity;
+			// Advance only after the last eye has drawn this snapshot.
+			VectorMA( p->org, frametime, p->vel, p->org );
 
-			p->unused = 255 * (p->die - gp_cl->time) * 2;
-			if( p->unused > 255 ) p->unused = 255;
-		}
-		else if( p->type == pt_slowgrav )
-		{
-			p->vel[2] = gravity * 0.05f;
+			if( p->type == pt_grav )
+			{
+				p->vel[0] *= scale;
+				p->vel[1] *= scale;
+				p->vel[2] -= gravity;
+
+				p->unused = 255 * (p->die - gp_cl->time) * 2;
+				if( p->unused > 255 ) p->unused = 255;
+			}
+			else if( p->type == pt_slowgrav )
+			{
+				p->vel[2] = gravity * 0.05f;
+			}
 		}
 	}
 	pglEnd();

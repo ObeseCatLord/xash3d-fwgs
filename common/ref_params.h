@@ -72,6 +72,14 @@ typedef struct ref_params_s
 	int		onlyClientDraw;	// if !=0 nothing is drawn by the engine except clientDraw functions
 } ref_params_t;
 
+/*
+ * This is a public GoldSrc client-DLL ABI. VR data must never be inserted
+ * here: optional engine features use separate, versioned interfaces instead.
+ */
+STATIC_ASSERT( offsetof( ref_params_t, forward ) == 24, "ref_params_t game ABI changed" );
+STATIC_ASSERT( offsetof( ref_params_t, cmd ) == 200, "ref_params_t game ABI changed" );
+STATIC_CHECK_SIZEOF( ref_params_t, 232, 240 );
+
 // same as ref_params but for overview mode
 typedef struct ref_overview_s
 {

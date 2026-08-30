@@ -13,13 +13,23 @@ def options(opt):
 	grp.add_option('--enable-static-gl', action='store_true', dest='GL_STATIC', default=False,
 		help = 'enable direct linking to opengl [default: %(default)s]')
 
+	grp.add_option('--enable-openxr', action='store_true', dest='OPENXR', default=False,
+		help = 'enable the desktop OpenXR backend [default: %(default)s]')
+
 	# stub
 	return
 
 def configure(conf):
 	conf.env.GL_STATIC = conf.options.GL_STATIC
+	conf.env.OPENXR = conf.options.OPENXR
 	if conf.env.GL_STATIC:
 		conf.check(lib='GL')
+	if conf.env.OPENXR:
+		if conf.env.DEST_OS != 'linux':
+			conf.fatal('--enable-openxr currently supports Linux/GLX only')
+		conf.check_cfg(package='openxr', args='--cflags --libs', uselib_store='OPENXR')
+		conf.check(lib='GL', uselib_store='OPENXR_GL')
+		conf.check(lib='X11', uselib_store='OPENXR_X11')
 
 	if conf.env.DEST_OS2 == 'android':
 		conf.check_cc(lib='log')
@@ -38,8 +48,8 @@ def build(bld):
 	targets = {
 		'ref_gl': {
 			'enable':  bld.env.GL,
-			'libs':    ['GL'] if bld.env.GL_STATIC else [],
-			'defines': ['XASH_GL_STATIC=1'] if bld.env.GL_STATIC else [],
+			'libs':    (['GL'] if bld.env.GL_STATIC else []) + (['OPENXR', 'OPENXR_GL', 'OPENXR_X11'] if bld.env.OPENXR else []),
+			'defines': (['XASH_GL_STATIC=1'] if bld.env.GL_STATIC else []) + (['XASH_OPENXR=1'] if bld.env.OPENXR else []),
 		},
 		'ref_gles1': {
 			'enable':  bld.env.NANOGL,

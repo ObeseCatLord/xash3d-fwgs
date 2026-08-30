@@ -42,18 +42,24 @@ static float	rgNoise[NOISE_DIVISIONS+1];	// global noise array
 
 // freq2 += step * 0.1;
 // Fractal noise generator, power of 2 wavelength
-static void FracNoise( float *noise, int divs )
+static float R_BeamNoiseRandom( uint32_t *seed )
+{
+	*seed = *seed * 1664525u + 1013904223u;
+	return (float)(( *seed >> 8 ) & 0x00FFFFFFu ) / 16777215.0f * 0.25f - 0.125f;
+}
+
+static void FracNoise( float *noise, int divs, uint32_t *seed )
 {
 	int div2 = divs >> 1;
 	if( divs < 2 ) return;
 
 	// noise is normalized to +/- scale
-	noise[div2] = ( noise[0] + noise[divs] ) * 0.5f + divs * gEngfuncs.COM_RandomFloat( -0.125f, 0.125f );
+	noise[div2] = ( noise[0] + noise[divs] ) * 0.5f + divs * R_BeamNoiseRandom( seed );
 
 	if( div2 > 1 )
 	{
-		FracNoise( &noise[div2], div2 );
-		FracNoise( noise, div2 );
+		FracNoise( &noise[div2], div2, seed );
+		FracNoise( noise, div2, seed );
 	}
 }
 
@@ -535,49 +541,23 @@ R_DrawBeamFollow
 drawi followed beam
 ==============
 */
-static void R_DrawBeamFollow( BEAM *pbeam, float frametime )
+static void R_DrawBeamFollow( BEAM *pbeam )
 {
-	gEngfuncs.R_FreeDeadParticles( &pbeam->particles );
-
 	particle_t *particles = pbeam->particles;
-	particle_t *pnew = NULL;
 
 	vec3_t delta;
 	float div = 0;
-	if( FBitSet( pbeam->flags, FBEAM_STARTENTITY ))
+	if( particles && FBitSet( pbeam->flags, FBEAM_STARTENTITY ))
 	{
-		if( particles )
-		{
-			VectorSubtract( particles->org, pbeam->source, delta );
-			div = VectorLength( delta );
-
-			if( div >= 32 )
-			{
-				pnew = gEngfuncs.CL_AllocParticleFast();
-			}
-		}
-		else
-		{
-			pnew = gEngfuncs.CL_AllocParticleFast();
-		}
-	}
-
-	if( pnew )
-	{
-		VectorCopy( pbeam->source, pnew->org );
-		pnew->die = gp_cl->time + pbeam->amplitude;
-		VectorClear( pnew->vel );
-
-		pnew->next = particles;
-		pbeam->particles = pnew;
-		particles = pnew;
+		VectorSubtract( particles->org, pbeam->source, delta );
+		div = VectorLength( delta );
 	}
 
 	// nothing to draw
 	if( !particles ) return;
 
 	vec3_t screen, screenLast;
-	if( !pnew && div != 0 )
+	if( div != 0 )
 	{
 		VectorCopy( pbeam->source, delta );
 		TriWorldToScreen( pbeam->source, screenLast );
@@ -618,9 +598,6 @@ static void R_DrawBeamFollow( BEAM *pbeam, float frametime )
 	div = 1.0f / pbeam->amplitude;
 	float fraction = ( pbeam->die - gp_cl->time ) * div;
 
-	float vLast = 0.0f;
-	float vStep = 1.0f;
-
 	while( particles )
 	{
 		TriBrightness( fraction );
@@ -645,8 +622,6 @@ static void R_DrawBeamFollow( BEAM *pbeam, float frametime )
 		VectorMA( particles->org, pbeam->width, normal, last1 );
 		VectorMA( particles->org, -pbeam->width, normal, last2 );
 
-		vLast += vStep;	// Advance texture scroll (v axis only)
-
 		if( particles->next != NULL )
 		{
 			fraction = (particles->die - gp_cl->time) * div;
@@ -668,14 +643,38 @@ static void R_DrawBeamFollow( BEAM *pbeam, float frametime )
 		particles = particles->next;
 	}
 
-	// drift popcorn trail if there is a velocity
-	particles = pbeam->particles;
+}
 
-	while( particles )
+static void R_UpdateBeamFollow( BEAM *pbeam, float frametime )
+{
+	particle_t *particles;
+	particle_t *pnew = NULL;
+
+	gEngfuncs.R_FreeDeadParticles( &pbeam->particles );
+	particles = pbeam->particles;
+	if( FBitSet( pbeam->flags, FBEAM_STARTENTITY ))
 	{
-		VectorMA( particles->org, frametime, particles->vel, particles->org );
-		particles = particles->next;
+		if( particles )
+		{
+			vec3_t delta;
+			VectorSubtract( particles->org, pbeam->source, delta );
+			if( VectorLength( delta ) >= 32.0f )
+				pnew = gEngfuncs.CL_AllocParticleFast();
+		}
+		else pnew = gEngfuncs.CL_AllocParticleFast();
 	}
+
+	if( pnew )
+	{
+		VectorCopy( pbeam->source, pnew->org );
+		pnew->die = gp_cl->time + pbeam->amplitude;
+		VectorClear( pnew->vel );
+		pnew->next = particles;
+		pbeam->particles = pnew;
+	}
+
+	for( particles = pbeam->particles; particles; particles = particles->next )
+		VectorMA( particles->org, frametime, particles->vel, particles->org );
 }
 
 /*
@@ -685,7 +684,8 @@ R_DrawRing
 Draw beamring
 ================
 */
-static void R_DrawRing( vec3_t source, vec3_t delta, float width, float amplitude, float freq, float speed, int segments )
+static void R_DrawRing( vec3_t source, vec3_t delta, float width, float amplitude, float freq, float speed, int segments,
+	uint32_t *noise_seed )
 {
 	if( segments < 2 )
 		return;
@@ -796,7 +796,7 @@ static void R_DrawRing( vec3_t source, vec3_t delta, float width, float amplitud
 		if( j == 0 && amplitude != 0 )
 		{
 			j = segments / 8;
-			FracNoise( rgNoise, NOISE_DIVISIONS );
+			FracNoise( rgNoise, NOISE_DIVISIONS, noise_seed );
 		}
 	}
 }
@@ -897,6 +897,11 @@ Update beam vars and draw it
 static void R_BeamDraw( BEAM *pbeam, float frametime )
 {
 	model_t *model = CL_ModelHandle( pbeam->modelIndex );
+	float beam_t = pbeam->t;
+	float brightness = pbeam->brightness;
+	uint32_t noise_seed = 2166136261u;
+	uint32_t bits;
+
 	SetBits( pbeam->flags, FBEAM_ISACTIVE );
 
 	if( !model || model->type != mod_sprite )
@@ -904,23 +909,6 @@ static void R_BeamDraw( BEAM *pbeam, float frametime )
 		pbeam->flags &= ~FBEAM_ISACTIVE; // force to ignore
 		pbeam->die = gp_cl->time;
 		return;
-	}
-
-	// update frequency
-	pbeam->freq += frametime;
-
-	// generate fractal noise
-	if( frametime != 0.0f )
-	{
-		rgNoise[0] = 0;
-		rgNoise[NOISE_DIVISIONS] = 0;
-	}
-
-	if( pbeam->amplitude != 0 && frametime != 0.0f )
-	{
-		if( FBitSet( pbeam->flags, FBEAM_SINENOISE ))
-			SineNoise( rgNoise, NOISE_DIVISIONS );
-		else FracNoise( rgNoise, NOISE_DIVISIONS );
 	}
 
 	// update end points
@@ -946,6 +934,30 @@ static void R_BeamDraw( BEAM *pbeam, float frametime )
 		else pbeam->segments = VectorLength( pbeam->delta ) * 0.075f + 3.0f; // one per 16 pixels
 	}
 
+	/* Seed draw-only noise after endpoint recomputation. Both eyes produce
+	 * identical geometry without consuming or resetting the engine's RNG. */
+	noise_seed = ( noise_seed ^ (uint32_t)pbeam->modelIndex ) * 16777619u;
+	noise_seed = ( noise_seed ^ (uint32_t)pbeam->type ) * 16777619u;
+	noise_seed = ( noise_seed ^ (uint32_t)pbeam->startEntity ) * 16777619u;
+	noise_seed = ( noise_seed ^ (uint32_t)pbeam->endEntity ) * 16777619u;
+	for( int i = 0; i < 3; ++i )
+	{
+		memcpy( &bits, &pbeam->source[i], sizeof( bits ));
+		noise_seed = ( noise_seed ^ bits ) * 16777619u;
+		memcpy( &bits, &pbeam->target[i], sizeof( bits ));
+		noise_seed = ( noise_seed ^ bits ) * 16777619u;
+	}
+	memcpy( &bits, &pbeam->freq, sizeof( bits ));
+	noise_seed = ( noise_seed ^ bits ) * 16777619u;
+	rgNoise[0] = 0;
+	rgNoise[NOISE_DIVISIONS] = 0;
+	if( pbeam->amplitude != 0 )
+	{
+		if( FBitSet( pbeam->flags, FBEAM_SINENOISE ))
+			SineNoise( rgNoise, NOISE_DIVISIONS );
+		else FracNoise( rgNoise, NOISE_DIVISIONS, &noise_seed );
+	}
+
 	if( pbeam->type == TE_BEAMPOINTS && R_BeamCull( pbeam->source, pbeam->target, 0 ))
 	{
 		ClearBits( pbeam->flags, FBEAM_ISACTIVE );
@@ -960,9 +972,8 @@ static void R_BeamDraw( BEAM *pbeam, float frametime )
 
 	if( pbeam->flags & ( FBEAM_FADEIN|FBEAM_FADEOUT ))
 	{
-		// update life cycle
-		pbeam->t = pbeam->freq + ( pbeam->die - gp_cl->time );
-		if( pbeam->t != 0.0f ) pbeam->t = 1.0f - pbeam->freq / pbeam->t;
+		beam_t = pbeam->freq + ( pbeam->die - gp_cl->time );
+		if( beam_t != 0.0f ) beam_t = 1.0f - pbeam->freq / beam_t;
 	}
 
 	if( pbeam->type == TE_BEAMHOSE )
@@ -1002,7 +1013,7 @@ static void R_BeamDraw( BEAM *pbeam, float frametime )
 				return;
 
 			// FIXME: needs to be testing
-			pbeam->brightness *= flFade;
+			brightness *= flFade;
 		}
 	}
 
@@ -1019,14 +1030,14 @@ static void R_BeamDraw( BEAM *pbeam, float frametime )
 		// XASH SPECIFIC: get brightness from head entity
 		cl_entity_t *pStart = gEngfuncs.R_BeamGetEntity( pbeam->startEntity );
 		if( pStart && pStart->curstate.rendermode != kRenderNormal )
-			pbeam->brightness = CL_FxBlend( pStart ) / 255.0f;
+			brightness = CL_FxBlend( pStart ) / 255.0f;
 	}
 
 	if( FBitSet( pbeam->flags, FBEAM_FADEIN ))
-		TriColor4f( pbeam->r, pbeam->g, pbeam->b, pbeam->t * pbeam->brightness );
+		TriColor4f( pbeam->r, pbeam->g, pbeam->b, beam_t * brightness );
 	else if( FBitSet( pbeam->flags, FBEAM_FADEOUT ))
-		TriColor4f( pbeam->r, pbeam->g, pbeam->b, ( 1.0f - pbeam->t ) * pbeam->brightness );
-	else TriColor4f( pbeam->r, pbeam->g, pbeam->b, pbeam->brightness );
+		TriColor4f( pbeam->r, pbeam->g, pbeam->b, ( 1.0f - beam_t ) * brightness );
+	else TriColor4f( pbeam->r, pbeam->g, pbeam->b, brightness );
 
 	switch( pbeam->type )
 	{
@@ -1056,19 +1067,26 @@ static void R_BeamDraw( BEAM *pbeam, float frametime )
 		break;
 	case TE_BEAMFOLLOW:
 		TriBegin( TRI_QUADS );
-		R_DrawBeamFollow( pbeam, frametime );
+		R_DrawBeamFollow( pbeam );
 		TriEnd();
 		break;
 	case TE_BEAMRING:
 		GL_Cull( GL_NONE );
 		TriBegin( TRI_TRIANGLE_STRIP );
-		R_DrawRing( pbeam->source, pbeam->delta, pbeam->width, pbeam->amplitude, pbeam->freq, pbeam->speed, pbeam->segments );
+		R_DrawRing( pbeam->source, pbeam->delta, pbeam->width, pbeam->amplitude, pbeam->freq, pbeam->speed,
+			pbeam->segments, &noise_seed );
 		TriEnd();
 		break;
 	}
 
 	GL_Cull( GL_FRONT );
 	r_stats.c_view_beams_count++;
+	if( frametime != 0.0f )
+	{
+		if( pbeam->type == TE_BEAMFOLLOW )
+			R_UpdateBeamFollow( pbeam, frametime );
+		pbeam->freq += frametime;
+	}
 }
 
 /*
@@ -1204,7 +1222,7 @@ CL_DrawBeams
 draw beam loop
 ==============
 */
-void CL_DrawBeams( int fTrans, BEAM *active_beams )
+void CL_DrawBeams( int fTrans, BEAM *active_beams, float frametime )
 {
 	pglShadeModel( GL_SMOOTH );
 	pglDepthMask( fTrans ? GL_FALSE : GL_TRUE );
@@ -1237,7 +1255,7 @@ void CL_DrawBeams( int fTrans, BEAM *active_beams )
 		if( !fTrans && !FBitSet( pBeam->flags, FBEAM_SOLID ))
 			continue;
 
-		R_BeamDraw( pBeam, gp_cl->time -   gp_cl->oldtime );
+		R_BeamDraw( pBeam, frametime );
 	}
 
 	pglShadeModel( GL_FLAT );

@@ -24,6 +24,10 @@ GNU General Public License for more details.
 #define EVENT_CLIENT	5000	// less than this value it's a server-side studio events
 #define MAX_LOCALLIGHTS	4
 
+#ifndef GL_FRONT_FACE
+#define GL_FRONT_FACE	0x0B46
+#endif
+
 typedef struct
 {
 	char		name[MAX_OSPATH];
@@ -191,6 +195,11 @@ should a flip the viewmodel if cl_righthand is set to 1
 */
 static qboolean R_AllowFlipViewModel( cl_entity_t *e )
 {
+	/* VR controls its own weapon hand. Keep the legacy cl_righthand behaviour
+	 * outside headset eye passes. */
+	if( GL_OpenXRIsRenderingEye() && e == tr.viewent )
+		return gEngfuncs.pfnGetCvarFloat( "vr_mirror_weapons" ) != 0.0f;
+
 	if( cl_righthand && cl_righthand->value > 0 )
 	{
 		if( e == tr.viewent )
@@ -2066,7 +2075,10 @@ static void R_StudioDrawPoints( void )
 		if( R_AllowFlipViewModel( RI.currententity ))
 		{
 			tr.fFlipViewModel = true;
-			GL_Cull( GL_NONE );
+			if( GL_OpenXRIsRenderingEye() &&
+				gEngfuncs.pfnGetCvarFloat( "vr_weapon_backface_culling" ) != 0.0f )
+				GL_Cull( GL_FRONT );
+			else GL_Cull( GL_NONE );
 		}
 		else
 		{
@@ -3292,6 +3304,9 @@ void R_RunViewmodelEvents( void )
 	if( r_drawviewmodel->value == 0 )
 		return;
 
+	if( GL_OpenXRIsRenderingEye() && gEngfuncs.pfnGetCvarFloat( "vr_scope_engaged" ) != 0.0f )
+		return;
+
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
 		return;
 
@@ -3322,10 +3337,19 @@ R_DrawViewModel
 void R_DrawViewModel( void )
 {
 	cl_entity_t	*view = tr.viewent;
+	qboolean	vr_viewmodel;
+	qboolean	mirror_weapon;
+	qboolean	backface_culling;
+	qboolean	saved_flip_viewmodel;
+	GLenum		saved_face_cull;
+	GLint		saved_front_face = GL_CCW;
 
 	R_GatherPlayerLight( view );
 
 	if( r_drawviewmodel->value == 0 )
+		return;
+
+	if( GL_OpenXRIsRenderingEye() && gEngfuncs.pfnGetCvarFloat( "vr_scope_engaged" ) != 0.0f )
 		return;
 
 	if( ENGINE_GET_PARM( PARM_THIRDPERSON ))
@@ -3344,6 +3368,20 @@ void R_DrawViewModel( void )
 	if( !RI.currententity->model )
 		return;
 
+	vr_viewmodel = GL_OpenXRIsRenderingEye();
+	mirror_weapon = vr_viewmodel && gEngfuncs.pfnGetCvarFloat( "vr_mirror_weapons" ) != 0.0f;
+	backface_culling = vr_viewmodel && gEngfuncs.pfnGetCvarFloat( "vr_weapon_backface_culling" ) != 0.0f;
+	saved_flip_viewmodel = tr.fFlipViewModel;
+	saved_face_cull = glState.faceCull;
+	if( mirror_weapon )
+	{
+		pglGetIntegerv( GL_FRONT_FACE, &saved_front_face );
+		pglFrontFace( saved_front_face == GL_CW ? GL_CCW : GL_CW );
+	}
+	tr.fFlipViewModel = mirror_weapon;
+	if( vr_viewmodel && !backface_culling )
+		GL_Cull( GL_NONE );
+
 	// adjust the depth range to prevent view model from poking into walls
 	pglDepthRange( gldepthmin, gldepthmin + 0.3f * ( gldepthmax - gldepthmin ));
 	RI.currentmodel = RI.currententity->model;
@@ -3355,12 +3393,25 @@ void R_DrawViewModel( void )
 		break;
 	case mod_studio:
 		R_StudioSetupTimings();
-		R_StudioDrawModelInternal( RI.currententity, STUDIO_RENDER );
+		/* The stock client studio callback constructs its own transform, so it
+		 * cannot consume tr.fFlipViewModel. Use the existing built-in path only
+		 * for an explicitly mirrored VR viewmodel. */
+		if( mirror_weapon )
+			R_StudioDrawModel( STUDIO_RENDER );
+		else R_StudioDrawModelInternal( RI.currententity, STUDIO_RENDER );
 		break;
 	}
 
 	// restore depth range
 	pglDepthRange( gldepthmin, gldepthmax );
+
+	if( vr_viewmodel )
+	{
+		GL_Cull( saved_face_cull );
+		if( mirror_weapon )
+			pglFrontFace( saved_front_face );
+		tr.fFlipViewModel = saved_flip_viewmodel;
+	}
 }
 
 /*

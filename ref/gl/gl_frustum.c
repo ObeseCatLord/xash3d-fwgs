@@ -70,6 +70,37 @@ void GL_FrustumInitProj( gl_frustum_t *out, float flZNear, float flZFar, float f
 	GL_FrustumSetPlane( out, FRUSTUM_NEAR, RI.cull_vforward, DotProduct( RI.cull_vforward, nearpoint ));
 }
 
+void GL_FrustumInitProjAsymmetric( gl_frustum_t *out, float flZNear, float flZFar,
+	float leftTan, float rightTan, float downTan, float upTan )
+{
+	vec3_t normal, iforward, point;
+
+	VectorMAM( -leftTan, RI.cull_vforward, -1.0f, RI.cull_vright, normal );
+	VectorNormalize( normal );
+	GL_FrustumSetPlane( out, FRUSTUM_LEFT, normal, DotProduct( RI.cullorigin, normal ));
+
+	VectorMAM( rightTan, RI.cull_vforward, 1.0f, RI.cull_vright, normal );
+	VectorNormalize( normal );
+	GL_FrustumSetPlane( out, FRUSTUM_RIGHT, normal, DotProduct( RI.cullorigin, normal ));
+
+	VectorMAM( -downTan, RI.cull_vforward, -1.0f, RI.cull_vup, normal );
+	VectorNormalize( normal );
+	GL_FrustumSetPlane( out, FRUSTUM_BOTTOM, normal, DotProduct( RI.cullorigin, normal ));
+
+	VectorMAM( upTan, RI.cull_vforward, 1.0f, RI.cull_vup, normal );
+	VectorNormalize( normal );
+	GL_FrustumSetPlane( out, FRUSTUM_TOP, normal, DotProduct( RI.cullorigin, normal ));
+
+	VectorNegate( RI.cull_vforward, iforward );
+	VectorMA( RI.cullorigin, flZFar, RI.cull_vforward, point );
+	GL_FrustumSetPlane( out, FRUSTUM_FAR, iforward, DotProduct( iforward, point ));
+
+	if( flZNear == 0.0f )
+		return;
+	VectorMA( RI.cullorigin, flZNear, RI.cull_vforward, point );
+	GL_FrustumSetPlane( out, FRUSTUM_NEAR, RI.cull_vforward, DotProduct( RI.cull_vforward, point ));
+}
+
 void GL_FrustumInitOrtho( gl_frustum_t *out, float xLeft, float xRight, float yTop, float yBottom, float flZNear, float flZFar )
 {
 	// setup the near and far planes

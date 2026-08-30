@@ -32,6 +32,8 @@ typedef struct gl_frustum_s
 } gl_frustum_t;
 
 void GL_FrustumInitProj( gl_frustum_t *out, float flZNear, float flZFar, float flFovX, float flFovY );
+void GL_FrustumInitProjAsymmetric( gl_frustum_t *out, float flZNear, float flZFar,
+	float leftTan, float rightTan, float downTan, float upTan );
 void GL_FrustumInitOrtho( gl_frustum_t *out, float xLeft, float xRight, float yTop, float yBottom, float flZNear, float flZFar );
 
 // cull methods
