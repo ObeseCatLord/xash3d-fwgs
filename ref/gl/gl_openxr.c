@@ -915,6 +915,30 @@ cleanup:
 	return success;
 }
 
+static void GL_OpenXRLogInteractionProfiles( void )
+{
+	static const char *hand_names[REF_VR_MAX_HANDS] = { "left", "right" };
+	char profile_name[XR_MAX_PATH_LENGTH];
+
+	for( int hand = 0; hand < REF_VR_MAX_HANDS; ++hand )
+	{
+		XrInteractionProfileState profile = { XR_TYPE_INTERACTION_PROFILE_STATE };
+		uint32_t length = 0;
+
+		if( !GL_OpenXRCheck( xrGetCurrentInteractionProfile( xr.session,
+			xr.actions.hand_paths[hand], &profile ), "xrGetCurrentInteractionProfile" ))
+			continue;
+		if( profile.interactionProfile == XR_NULL_PATH )
+		{
+			gEngfuncs.Con_Printf( "OpenXR: %s hand has no active interaction profile\n", hand_names[hand] );
+			continue;
+		}
+		if( GL_OpenXRCheck( xrPathToString( xr.instance, profile.interactionProfile,
+			sizeof( profile_name ), &length, profile_name ), "xrPathToString(interaction profile)" ))
+			gEngfuncs.Con_Printf( "OpenXR: %s hand interaction profile: %s\n", hand_names[hand], profile_name );
+	}
+}
+
 static void GL_OpenXRPollEvents( void )
 {
 	XrEventDataBuffer event = { XR_TYPE_EVENT_DATA_BUFFER };
@@ -926,6 +950,13 @@ static void GL_OpenXRPollEvents( void )
 			xr.exit_requested = true;
 		else if( event.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING )
 			xr.reference_changed = true;
+		else if( event.type == XR_TYPE_EVENT_DATA_INTERACTION_PROFILE_CHANGED )
+		{
+			const XrEventDataInteractionProfileChanged *changed =
+				(const XrEventDataInteractionProfileChanged *)&event;
+			if( changed->session == xr.session )
+				GL_OpenXRLogInteractionProfiles();
+		}
 		else if( event.type == XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED )
 		{
 			const XrEventDataSessionStateChanged *changed = (const XrEventDataSessionStateChanged *)&event;
