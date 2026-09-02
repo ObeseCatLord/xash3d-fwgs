@@ -663,6 +663,26 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 	rserr_t err;
 	Uint32 flags = SDL_WINDOW_HIDDEN | SDL_WINDOW_RESIZABLE;
 	SDL_Rect rect = { SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, input_width, input_height };
+	char display_argument[16];
+
+	/* Select a desktop mirror display before the window becomes visible. */
+	if( Sys_GetParmFromCmdLine( "-display", display_argument ))
+	{
+		const int display_count = SDL_GetNumVideoDisplays();
+		const qboolean valid_index = display_argument[0] && Q_isdigit( display_argument );
+		const int display_index = valid_index ? Q_atoi( display_argument ) : -1;
+
+		if( display_index >= 0 && display_index < display_count )
+		{
+			rect.x = SDL_WINDOWPOS_CENTERED_DISPLAY( display_index );
+			rect.y = SDL_WINDOWPOS_CENTERED_DISPLAY( display_index );
+		}
+		else
+		{
+			Con_Printf( S_WARN "Ignoring invalid -display %s (available displays: %d)\n",
+				display_argument, display_count );
+		}
+	}
 
 	// TODO: disabled for Windows for now
 #if !XASH_WIN32
