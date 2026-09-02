@@ -1363,6 +1363,13 @@ void GL_SetupAttributes( int safegl )
 {
 	int context_flags = 0; // REFTODO!!!!!
 	int samples = 0;
+	qboolean openxr_context = false;
+
+#if XASH_OPENXR
+	/* OpenXR swapchain images are single-sample. Keeping the desktop default
+	 * framebuffer single-sample makes the scaled eye copy a legal GL blit. */
+	openxr_context = gEngfuncs.pfnGetCvarFloat( "vr_enable" ) != 0.0f;
+#endif
 
 #if XASH_GLES
 	gEngfuncs.GL_SetAttribute( REF_GL_CONTEXT_PROFILE_MASK, REF_GL_CONTEXT_PROFILE_ES );
@@ -1466,7 +1473,7 @@ void GL_SetupAttributes( int safegl )
 		}
 	}
 
-	if( safegl < SAFE_NOMSAA )
+	if( safegl < SAFE_NOMSAA && !openxr_context )
 	{
 		switch( (int)gEngfuncs.pfnGetCvarFloat( "gl_msaa_samples" ))
 		{
@@ -1497,7 +1504,11 @@ void GL_SetupAttributes( int safegl )
 	}
 	else
 	{
-		gEngfuncs.Cvar_Set( "gl_msaa_samples", "0" );
+		gEngfuncs.GL_SetAttribute( REF_GL_MULTISAMPLEBUFFERS, 0 );
+		gEngfuncs.GL_SetAttribute( REF_GL_MULTISAMPLESAMPLES, 0 );
+		glConfig.max_multisamples = 0;
+		if( !openxr_context )
+			gEngfuncs.Cvar_Set( "gl_msaa_samples", "0" );
 	}
 }
 
