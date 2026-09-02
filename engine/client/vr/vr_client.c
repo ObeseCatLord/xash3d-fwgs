@@ -661,11 +661,33 @@ qboolean CL_VREndEye( int eye )
 	return ref.dllFuncs.R_VREndEye && ref.dllFuncs.R_VREndEye( eye, refState.width, refState.height );
 }
 
+static void CL_VRClampHeadOffset( const vec3_t start, const vec3_t desired, vec3_t clamped )
+{
+	pmtrace_t trace;
+	vec3_t trace_start, trace_end;
+
+	VectorCopy( desired, clamped );
+	if( cls.spectator || !clgame.pmove )
+		return;
+
+	VectorCopy( start, trace_start );
+	VectorCopy( desired, trace_end );
+	trace = CL_TraceLine( trace_start, trace_end, PM_STUDIO_IGNORE );
+	if( trace.fraction < 1.0f )
+	{
+		/* Match Lambda1VR's wall pushback: clip room-scale XY at the first
+		 * obstruction while preserving the physically requested head Z. */
+		clamped[0] = trace.endpos[0];
+		clamped[1] = trace.endpos[1];
+	}
+}
+
 void CL_VRApplyHeadPose( ref_viewpass_t *rvp )
 {
 	ref_vr_pose_t relative;
 	vec3_t body_forward, body_right, body_up;
 	vec3_t composed_forward, composed_right, composed_up;
+	vec3_t head_start, desired_origin;
 
 	if( !rvp || !vr_center_valid || !FBitSet( vr_frame.flags, REF_VR_FRAME_HEAD_VALID ))
 	{
@@ -679,9 +701,11 @@ void CL_VRApplyHeadPose( ref_viewpass_t *rvp )
 	vr_body_view_valid = true;
 	AngleVectors( rvp->viewangles, body_forward, body_right, body_up );
 	VectorMA( rvp->vieworigin, vr_height_adjust.value * vr_worldscale.value, body_up, rvp->vieworigin );
-	VectorMA( rvp->vieworigin, relative.position[0] * vr_worldscale.value, body_forward, rvp->vieworigin );
-	VectorMA( rvp->vieworigin, -relative.position[1] * vr_worldscale.value, body_right, rvp->vieworigin );
-	VectorMA( rvp->vieworigin, relative.position[2] * vr_worldscale.value, body_up, rvp->vieworigin );
+	VectorCopy( rvp->vieworigin, head_start );
+	VectorMA( head_start, relative.position[0] * vr_worldscale.value, body_forward, desired_origin );
+	VectorMA( desired_origin, -relative.position[1] * vr_worldscale.value, body_right, desired_origin );
+	VectorMA( desired_origin, relative.position[2] * vr_worldscale.value, body_up, desired_origin );
+	CL_VRClampHeadOffset( head_start, desired_origin, rvp->vieworigin );
 
 	VectorScale( body_forward, relative.forward[0], composed_forward );
 	VectorMA( composed_forward, -relative.forward[1], body_right, composed_forward );
