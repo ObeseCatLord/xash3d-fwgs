@@ -143,6 +143,8 @@ typedef struct gl_openxr_state_s
 	float ui_clear_color[4];
 	float comfort_level;
 	uint64_t comfort_frame;
+	double haptic_until[REF_VR_MAX_HANDS];
+	qboolean haptic_sustained[REF_VR_MAX_HANDS];
 } gl_openxr_state_t;
 
 static gl_openxr_state_t xr;
@@ -978,6 +980,8 @@ static void GL_OpenXRPollEvents( void )
 					GL_OpenXRCheck( xrEndSession( xr.session ), "xrEndSession" );
 					xr.session_running = false;
 				}
+				memset( xr.haptic_until, 0, sizeof( xr.haptic_until ));
+				memset( xr.haptic_sustained, 0, sizeof( xr.haptic_sustained ));
 				break;
 			case XR_SESSION_STATE_FOCUSED:
 				xr.focused = true;
@@ -1374,6 +1378,8 @@ qboolean GL_OpenXRHaptic( int hand, float duration, float frequency, float ampli
 	XrHapticActionInfo action_info = { XR_TYPE_HAPTIC_ACTION_INFO };
 	XrHapticVibration vibration = { XR_TYPE_HAPTIC_VIBRATION };
 	float clamped_duration;
+	double now;
+	qboolean succeeded;
 
 	if( !xr.initialized || !xr.session_running || hand < 0 || hand >= REF_VR_MAX_HANDS ||
 		xr.actions.haptic == XR_NULL_HANDLE )
@@ -1382,7 +1388,23 @@ qboolean GL_OpenXRHaptic( int hand, float duration, float frequency, float ampli
 	action_info.action = xr.actions.haptic;
 	action_info.subactionPath = xr.actions.hand_paths[hand];
 	if( duration == 0.0f || amplitude <= 0.0f )
-		return GL_OpenXRCheck( xrStopHapticFeedback( xr.session, &action_info ), "xrStopHapticFeedback" );
+	{
+		succeeded = GL_OpenXRCheck( xrStopHapticFeedback( xr.session, &action_info ),
+			"xrStopHapticFeedback" );
+		if( succeeded )
+		{
+			xr.haptic_until[hand] = 0.0;
+			xr.haptic_sustained[hand] = false;
+		}
+		return succeeded;
+	}
+
+	/* Lambda1VR lets the first finite pulse finish and protects sustained
+	 * effects until their explicit stop event. OpenXR owns pulse playback, so
+	 * retain only that admission policy rather than re-submitting every frame. */
+	now = gEngfuncs.pfnTime();
+	if( xr.haptic_sustained[hand] || xr.haptic_until[hand] > now )
+		return true;
 
 	/* Lambda1VR uses a negative duration for sustained effects such as the
 	 * Egon beam, followed by an explicit zero-duration stop event. */
@@ -1395,8 +1417,14 @@ qboolean GL_OpenXRHaptic( int hand, float duration, float frequency, float ampli
 	}
 	vibration.frequency = bound( 0.0f, frequency, 320.0f );
 	vibration.amplitude = bound( 0.0f, amplitude, 1.0f );
-	return GL_OpenXRCheck( xrApplyHapticFeedback( xr.session, &action_info, (const XrHapticBaseHeader *)&vibration ),
-		"xrApplyHapticFeedback" );
+	succeeded = GL_OpenXRCheck( xrApplyHapticFeedback( xr.session, &action_info,
+		(const XrHapticBaseHeader *)&vibration ), "xrApplyHapticFeedback" );
+	if( succeeded )
+	{
+		xr.haptic_sustained[hand] = duration < 0.0f;
+		xr.haptic_until[hand] = duration < 0.0f ? 0.0 : now + clamped_duration;
+	}
+	return succeeded;
 }
 
 qboolean GL_OpenXRGetEyeFov( float fov[4] )
