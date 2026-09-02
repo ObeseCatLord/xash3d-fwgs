@@ -8,6 +8,7 @@ Copyright (C) 2026 Xash3D FWGS contributors
 
 #include "ref_api.h"
 
+void CL_VRRegisterCvars( void );
 void CL_VRFrameBegin( void );
 void CL_VRFrameEnd( void );
 qboolean CL_VRShouldRender( void );
