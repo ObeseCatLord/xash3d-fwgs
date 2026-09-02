@@ -653,6 +653,23 @@ void VID_RestoreScreenResolution( window_mode_t window_mode )
 #endif // !XASH_MOBILE_PLATFORM
 }
 
+static qboolean VID_ParseDisplayIndex( const char *argument, int display_count, int *display_index )
+{
+	uint64_t value = 0;
+	const char *cursor;
+
+	if( display_count <= 0 || !argument[0] || !Q_isdigit( argument ))
+		return false;
+
+	for( cursor = argument; *cursor; ++cursor )
+		value = value * 10u + (uint64_t)( *cursor - '0' );
+	if( value >= (uint64_t)display_count )
+		return false;
+
+	*display_index = (int)value;
+	return true;
+}
+
 /*
 =================
 VID_CreateWindow
@@ -669,10 +686,9 @@ static rserr_t VID_CreateWindow( const int input_width, const int input_height, 
 	if( Sys_GetParmFromCmdLine( "-display", display_argument ))
 	{
 		const int display_count = SDL_GetNumVideoDisplays();
-		const qboolean valid_index = display_argument[0] && Q_isdigit( display_argument );
-		const int display_index = valid_index ? Q_atoi( display_argument ) : -1;
+		int display_index;
 
-		if( display_index >= 0 && display_index < display_count )
+		if( VID_ParseDisplayIndex( display_argument, display_count, &display_index ))
 		{
 			rect.x = SDL_WINDOWPOS_CENTERED_DISPLAY( display_index );
 			rect.y = SDL_WINDOWPOS_CENTERED_DISPLAY( display_index );

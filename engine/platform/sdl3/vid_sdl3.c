@@ -70,13 +70,29 @@ static SDL_Window *VID_CreateWindowWithSafeGL( const char *title, SDL_Rect *rect
 {
 	for( ; glw_state.safe < SAFE_LAST; glw_state.safe++ )
 	{
+		SDL_PropertiesID properties;
+		SDL_Window *hWnd;
+
 		if( glw_state.safe == SAFE_NOMSAA && !gl_msaa_samples.value )
 			continue;
 
 		// choose attributes with select safegl level
 		GL_SetupAttributes( glw_state.safe );
 
-		SDL_Window *hWnd = SDL_CreateWindow( title, rect->w, rect->h, flags );
+		properties = SDL_CreateProperties();
+		if( !properties )
+		{
+			Con_PrintSDLError( "SDL_CreateProperties" );
+			return NULL;
+		}
+		SDL_SetStringProperty( properties, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title );
+		SDL_SetNumberProperty( properties, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, rect->w );
+		SDL_SetNumberProperty( properties, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, rect->h );
+		SDL_SetNumberProperty( properties, SDL_PROP_WINDOW_CREATE_X_NUMBER, rect->x );
+		SDL_SetNumberProperty( properties, SDL_PROP_WINDOW_CREATE_Y_NUMBER, rect->y );
+		SDL_SetNumberProperty( properties, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, flags );
+		hWnd = SDL_CreateWindowWithProperties( properties );
+		SDL_DestroyProperties( properties );
 
 		// stop if window creation was successful
 		if( hWnd )
@@ -108,10 +124,51 @@ static void VID_SaveWindowSize( SDL_Window *hWnd, int width, int height )
 	R_SaveVideoMode( width, height, render_w, render_h, maximized );
 }
 
+static qboolean VID_ParseDisplayIndex( const char *argument, int display_count, int *display_index )
+{
+	uint64_t value = 0;
+	const char *cursor;
+
+	if( display_count <= 0 || !argument[0] || !Q_isdigit( argument ))
+		return false;
+
+	for( cursor = argument; *cursor; ++cursor )
+		value = value * 10u + (uint64_t)( *cursor - '0' );
+	if( value >= (uint64_t)display_count )
+		return false;
+
+	*display_index = (int)value;
+	return true;
+}
+
 static qboolean VID_CreateWindow( const int input_width, const int input_height, window_mode_t window_mode )
 {
 	SDL_Rect rect = { SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, input_width, input_height };
 	Uint32   flags = SDL_WINDOW_RESIZABLE;
+	SDL_DisplayID display = SDL_GetPrimaryDisplay();
+	char display_argument[16];
+
+	/* Select the desktop mirror display before creating the window. SDL3
+	 * exposes stable display IDs, while -display remains a user-facing index. */
+	if( Sys_GetParmFromCmdLine( "-display", display_argument ))
+	{
+		int display_count = 0;
+		SDL_DisplayID *displays = SDL_GetDisplays( &display_count );
+		int display_index;
+
+		if( displays && VID_ParseDisplayIndex( display_argument, display_count, &display_index ))
+		{
+			display = displays[display_index];
+			rect.x = SDL_WINDOWPOS_CENTERED_DISPLAY( display );
+			rect.y = SDL_WINDOWPOS_CENTERED_DISPLAY( display );
+		}
+		else
+		{
+			Con_Printf( S_WARN "Ignoring invalid -display %s (available displays: %d)\n",
+				display_argument, display_count );
+		}
+		SDL_free( displays );
+	}
 
 	if( !glw_state.software )
 		SetBits( flags, SDL_WINDOW_OPENGL );
@@ -119,8 +176,6 @@ static qboolean VID_CreateWindow( const int input_width, const int input_height,
 	// probe true fullscreen first, if it fails, try borderless next
 	if( window_mode == WINDOW_MODE_FULLSCREEN )
 	{
-		SDL_DisplayID   display = SDL_GetPrimaryDisplay();
-
 		SDL_DisplayMode dm;
 		if( SDL_GetClosestFullscreenDisplayMode( display, rect.w, rect.h, 0.0f, true, &dm ))
 		{
@@ -139,7 +194,6 @@ static qboolean VID_CreateWindow( const int input_width, const int input_height,
 	// try borderless mode
 	if( window_mode == WINDOW_MODE_BORDERLESS )
 	{
-		SDL_DisplayID display = SDL_GetPrimaryDisplay();
 		const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode( display );
 
 		if( dm )
