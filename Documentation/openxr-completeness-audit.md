@@ -37,19 +37,19 @@ deferred in the Linux source path.
 
 | Surface | Source status | Runtime status |
 |---|---|---|
-| OpenXR stereo, asymmetric FOV, 6DoF head pose and head-relative UI | implemented | simulated-runtime acceptance required |
+| OpenXR stereo, asymmetric FOV, 6DoF head pose and head-relative UI | implemented | simulated-runtime acceptance passed |
 | Quest Touch and Valve Index actions, handedness and squeeze edges | implemented | physical-controller acceptance last |
 | locomotion, room scale, wall pushback, crouch, turn, ladder and recenter | implemented | gameplay acceptance required |
 | menu ray, use gestures, backpack actions, flashlight/hand presentation | implemented | gameplay acceptance required |
 | comfort mask, scope and two-hand stabilization | implemented | gameplay acceptance required |
 | finite and sustained per-hand haptics, including overlap policy | implemented | physical-controller acceptance last |
 | weapon mirroring and weapon back-face controls | implemented and archived | presentation acceptance required |
-| fixed-size VR client API and negotiated user-command sidecar | implemented with legacy fallback | two-client acceptance required |
-| base Half-Life weapons, events, melee, haptics, save/reset and RPG aim | implemented | campaign and RPG acceptance required |
+| fixed-size VR client API and negotiated user-command sidecar | implemented with legacy fallback | modern two-client acceptance passed; protocol-48 server required for live fallback acceptance |
+| base Half-Life weapons, events, melee, haptics, save/reset and RPG aim | implemented | representative campaign startup passed; physical RPG acceptance required |
 | Blue Shift variant | implemented from the shared base SDK | campaign acceptance requires game data |
 | Opposing Force weapons and behavior | implemented in the existing Gearbox DLL | campaign acceptance requires game data |
-| standalone They Hunger weapons and behavior | implemented in its existing DLL | campaign acceptance requires game data |
-| Sven/SevenKewp VR behavior and They Hunger compatibility classes | implemented in SevenKewp | multiplayer/campaign acceptance required |
+| standalone They Hunger weapons and behavior | implemented in its existing DLL | standalone campaign acceptance requires game data |
+| Sven/SevenKewp VR behavior and They Hunger compatibility classes | implemented in SevenKewp | modern two-client, representative base-campaign and 58-map They Hunger conversion startup passed |
 
 The They Hunger multiplayer archive contains 58 maps and 127 distinct entity
 classnames. Its map-required custom entities are represented by SevenKewp.
@@ -70,32 +70,48 @@ hornetgun.
 - Engine/renderer ELF relocation checks pass.
 - The package tests stage the exact 58-map They Hunger multiplayer overlay
   without modifying either input.
+- Simulated Monado accepted the Linux GLX OpenXR session, stereo submission,
+  head-relative UI submission and VR client API for base Half-Life, Sven and
+  They Hunger. Every one of the 58 supplied They Hunger multiplayer maps
+  reached those checkpoints without a resource warning.
+- The supplied Sven 3 `c1a0`, `c2a3` and `c4a1` maps pass the same checkpoints
+  without resource warnings. `c2a3` exposed a historical non-text padding byte
+  after its final BSP entity; the shared loader now normalizes only padding
+  after a structurally complete final entity, with malformed inter-entity data
+  retained for the existing parsers to reject.
+- A dedicated Sven server accepted one VR and one non-VR client concurrently
+  over current protocol 49. The VR client submitted OpenXR stereo/UI frames;
+  the peer created no OpenXR session and neither connection reported a
+  malformed VR sidecar.
+- The user-command sidecar unit test round-trips every signed pose field and
+  verifies flags, unknown-version consumption and unknown-size consumption.
+- A forced protocol-48 client correctly selected GoldSrc mode and was rejected
+  by the protocol-49-only Xash server before sign-on. The client-DLL
+  `updatevr` fallback is source-covered, but a live fallback test needs an
+  actual protocol-48 server rather than weakening the production server.
 
 Builds, symbols, packet records and map inventories are necessary evidence,
 but they do not by themselves prove user-observable gameplay.
 
 ## Remaining acceptance plan
 
-1. **Simulated Monado, Linux:** stage a fresh install and prove OpenXR session,
-   stereo, UI, game DLL negotiation, clean shutdown/restart and desktop mirror
-   placement on the non-primary monitor.
-2. **Representative campaign starts:** base Half-Life, Blue Shift, Opposing
-   Force, standalone They Hunger, Sven's base-campaign conversion and the They
-   Hunger multiplayer conversion. Missing legally owned expansion data is an
-   input prerequisite, not a reason to replace game code.
-3. **Behavior scenarios:** divergent HMD/controller aim, left-handed mode,
+1. **Representative campaign starts:** Blue Shift, Opposing Force and
+   standalone They Hunger. Missing legally owned expansion data is an input
+   prerequisite, not a reason to replace game code.
+2. **Behavior scenarios:** divergent HMD/controller aim, left-handed mode,
    physical melee, use/backpack/flashlight, scopes, two-hand stabilization,
    save/load, death/respawn, map transition and sustained-haptic stop/restart.
-4. **Sven multiplayer:** run two clients with negotiated and legacy fallback
-   paths. The RPG is blocking: muzzle origin, launch direction, guidance,
-   collision and the second client's observation must all agree with the
-   dominant controller pose.
-5. **Campaign startup sweep:** only after representative behavior passes, run
+3. **Sven multiplayer:** run the legacy fallback against a real protocol-48
+   server. On hardware, verify RPG muzzle origin, launch direction, guidance,
+   collision and the second client's observation all agree with the dominant
+   controller pose. The authoritative launch/guidance math and full sidecar
+   serialization are source- and unit-verified.
+4. **Campaign startup sweep:** only after representative behavior passes, run
    the manifests to find map-specific resource/entity failures. This is why an
    all-map loop exists; it is not a substitute for playing every map.
-6. **Physical Linux hardware:** Quest Touch and Valve Index control/haptic
+5. **Physical Linux hardware:** Quest Touch and Valve Index control/haptic
    acceptance.
-7. **Windows last:** build, package and repeat the runtime/controller matrix.
+6. **Windows last:** build, package and repeat the runtime/controller matrix.
 
 Any failure must be reduced to the narrowest existing owner. Reopen the
 architecture only if evidence shows that an adapter cannot preserve the
