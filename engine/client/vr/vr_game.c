@@ -45,6 +45,11 @@ static int32_t VR_CLIENT_CALL CL_VRGameHaptic( uint32_t hand, float duration, fl
 	return CL_VRHaptic( (int)hand, duration, frequency, amplitude ) ? 1 : 0;
 }
 
+static int32_t VR_CLIENT_CALL CL_VRGameIsUsercmdSidecarNegotiated( void )
+{
+	return cls.net_protocol == PROTO_CURRENT && FBitSet( cls.extensions, NET_EXT_VR_USERCMD ) ? 1 : 0;
+}
+
 void CL_VRGameInit( void )
 {
 	vr_client_get_api_t GetVRClientAPI;
@@ -53,6 +58,7 @@ void CL_VRGameInit( void )
 		.version = VR_CLIENT_API_VERSION,
 		.struct_size = sizeof( engine_api ),
 		.Haptic = CL_VRGameHaptic,
+		.IsUsercmdSidecarNegotiated = CL_VRGameIsUsercmdSidecarNegotiated,
 	};
 
 	CL_VRGameShutdown();
