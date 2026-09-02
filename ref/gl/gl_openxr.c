@@ -1122,6 +1122,7 @@ qboolean GL_OpenXRBeginEye( int eye )
 qboolean GL_OpenXREndEye( int eye, int source_width, int source_height )
 {
 	gl_openxr_eye_t *target;
+	GLenum blit_error;
 	XrSwapchainImageAcquireInfo acquire_info = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
 	XrSwapchainImageWaitInfo wait_info = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
 	XrSwapchainImageReleaseInfo release_info = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
@@ -1149,8 +1150,21 @@ qboolean GL_OpenXREndEye( int eye, int source_width, int source_height )
 	pglBindFramebuffer( GL_READ_FRAMEBUFFER, 0 );
 	pglReadBuffer( GL_BACK );
 	pglBindFramebuffer( GL_DRAW_FRAMEBUFFER, target->framebuffers[target->image_index] );
+	while(( blit_error = pglGetError() ) != GL_NO_ERROR )
+		gEngfuncs.Con_Reportf( S_NOTE "OpenXR: clearing GL error 0x%x before eye blit\n", blit_error );
 	pglBlitFramebuffer( 0, 0, source_width, source_height, 0, 0, target->width, target->height,
 		GL_COLOR_BUFFER_BIT, GL_LINEAR );
+	blit_error = pglGetError();
+	if( blit_error != GL_NO_ERROR )
+	{
+		gEngfuncs.Con_Printf( S_ERROR "OpenXR: eye %d blit failed with GL error 0x%x; "
+			"set gl_msaa_samples 0 and restart video\n", eye, blit_error );
+		pglBindFramebuffer( GL_FRAMEBUFFER, 0 );
+		pglViewport( 0, 0, source_width, source_height );
+		GL_OpenXRShutdown();
+		xr.failed = true;
+		return false;
+	}
 	pglBindFramebuffer( GL_FRAMEBUFFER, target->framebuffers[target->image_index] );
 	pglColorMask( GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE );
 	pglClearColor( 0.0f, 0.0f, 0.0f, 1.0f );
