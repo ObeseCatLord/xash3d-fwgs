@@ -1334,13 +1334,20 @@ qboolean GL_OpenXRHaptic( int hand, float duration, float frequency, float ampli
 		xr.actions.haptic == XR_NULL_HANDLE )
 		return false;
 
-	clamped_duration = bound( 0.0f, duration, 10.0f );
 	action_info.action = xr.actions.haptic;
 	action_info.subactionPath = xr.actions.hand_paths[hand];
-	if( clamped_duration <= 0.0f || amplitude <= 0.0f )
+	if( duration == 0.0f || amplitude <= 0.0f )
 		return GL_OpenXRCheck( xrStopHapticFeedback( xr.session, &action_info ), "xrStopHapticFeedback" );
 
-	vibration.duration = (XrDuration)( clamped_duration * 1000000000.0f );
+	/* Lambda1VR uses a negative duration for sustained effects such as the
+	 * Egon beam, followed by an explicit zero-duration stop event. */
+	if( duration < 0.0f )
+		vibration.duration = XR_INFINITE_DURATION;
+	else
+	{
+		clamped_duration = bound( 0.0f, duration, 10.0f );
+		vibration.duration = (XrDuration)( clamped_duration * 1000000000.0f );
+	}
 	vibration.frequency = bound( 0.0f, frequency, 320.0f );
 	vibration.amplitude = bound( 0.0f, amplitude, 1.0f );
 	return GL_OpenXRCheck( xrApplyHapticFeedback( xr.session, &action_info, (const XrHapticBaseHeader *)&vibration ),
