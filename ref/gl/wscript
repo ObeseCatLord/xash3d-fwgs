@@ -25,11 +25,16 @@ def configure(conf):
 	if conf.env.GL_STATIC:
 		conf.check(lib='GL')
 	if conf.env.OPENXR:
-		if conf.env.DEST_OS != 'linux':
-			conf.fatal('--enable-openxr currently supports Linux/GLX only')
-		conf.check_cfg(package='openxr', args='--cflags --libs', uselib_store='OPENXR')
-		conf.check(lib='GL', uselib_store='OPENXR_GL')
-		conf.check(lib='X11', uselib_store='OPENXR_X11')
+		if conf.env.DEST_OS == 'linux':
+			conf.check_cfg(package='openxr', args='--cflags --libs', uselib_store='OPENXR')
+			conf.check(lib='GL', uselib_store='OPENXR_GL')
+			conf.check(lib='X11', uselib_store='OPENXR_X11')
+		elif conf.env.DEST_OS == 'win32':
+			conf.check_cc(header_name='openxr/openxr.h', uselib_store='OPENXR')
+			conf.check(lib='openxr_loader', uselib_store='OPENXR')
+			conf.check(lib='opengl32', uselib_store='OPENXR_GL')
+		else:
+			conf.fatal('--enable-openxr supports Linux/GLX and Windows/WGL only')
 
 	if conf.env.DEST_OS2 == 'android':
 		conf.check_cc(lib='log')
@@ -48,7 +53,7 @@ def build(bld):
 	targets = {
 		'ref_gl': {
 			'enable':  bld.env.GL,
-			'libs':    (['GL'] if bld.env.GL_STATIC else []) + (['OPENXR', 'OPENXR_GL', 'OPENXR_X11'] if bld.env.OPENXR else []),
+			'libs':    (['GL'] if bld.env.GL_STATIC else []) + (['OPENXR', 'OPENXR_GL'] + (['OPENXR_X11'] if bld.env.DEST_OS == 'linux' else []) if bld.env.OPENXR else []),
 			'defines': (['XASH_GL_STATIC=1'] if bld.env.GL_STATIC else []) + (['XASH_OPENXR=1'] if bld.env.OPENXR else []),
 		},
 		'ref_gles1': {
