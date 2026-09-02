@@ -281,7 +281,7 @@ static void GL_OpenXRSuggestInteractionProfiles( void )
 		{ xr.actions.grip_pose, "/user/hand/left/input/grip/pose", "/user/hand/right/input/grip/pose" },
 		{ xr.actions.aim_pose, "/user/hand/left/input/aim/pose", "/user/hand/right/input/aim/pose" },
 		{ xr.actions.trigger, "/user/hand/left/input/trigger/value", "/user/hand/right/input/trigger/value" },
-		{ xr.actions.squeeze, "/user/hand/left/input/squeeze/value", "/user/hand/right/input/squeeze/value" },
+		{ xr.actions.squeeze, "/user/hand/left/input/squeeze/force", "/user/hand/right/input/squeeze/force" },
 		{ xr.actions.stick, "/user/hand/left/input/thumbstick", "/user/hand/right/input/thumbstick" },
 		{ xr.actions.primary, "/user/hand/left/input/x/click", "/user/hand/right/input/a/click" },
 		{ xr.actions.secondary, "/user/hand/left/input/y/click", "/user/hand/right/input/b/click" },
@@ -566,6 +566,8 @@ static qboolean GL_OpenXRFillHands( ref_vr_hand_t hands[REF_VR_MAX_HANDS] )
 			REF_VR_HAND_AIM_VALID, false, &hands[hand] ) && valid;
 		valid = GL_OpenXRGetFloatAction( xr.actions.trigger, xr.actions.hand_paths[hand], &hands[hand].trigger ) && valid;
 		valid = GL_OpenXRGetFloatAction( xr.actions.squeeze, xr.actions.hand_paths[hand], &hands[hand].squeeze ) && valid;
+		if( REF_VR_SQUEEZE_PRESSED( hands[hand].squeeze ))
+			SetBits( hands[hand].flags, REF_VR_HAND_SQUEEZE_PRESSED );
 		valid = GL_OpenXRGetVector2Action( xr.actions.stick, xr.actions.hand_paths[hand], hands[hand].stick ) && valid;
 		if( GL_OpenXRGetBooleanAction( xr.actions.primary, xr.actions.hand_paths[hand], &pressed ))
 		{

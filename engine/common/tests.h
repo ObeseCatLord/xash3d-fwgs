@@ -48,6 +48,7 @@ void Test_RunBuffer( void );
 void Test_RunMunge( void );
 void Test_RunTitles( void );
 void Test_RunVRUsercmdSidecar( void );
+void Test_RunVRInputPolicy( void );
 
 #define TEST_LIST_0 \
 	Test_RunLibCommon(); \
@@ -58,7 +59,8 @@ void Test_RunVRUsercmdSidecar( void );
 	Test_RunBuffer(); \
 	Test_RunDelta(); \
 	Test_RunMunge(); \
-	Test_RunVRUsercmdSidecar();
+	Test_RunVRUsercmdSidecar(); \
+	Test_RunVRInputPolicy();
 
 #define TEST_LIST_0_CLIENT \
 	Test_RunCon(); \

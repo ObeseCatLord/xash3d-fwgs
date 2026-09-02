@@ -163,6 +163,8 @@ void CL_VRGameFrame( void )
 			out->flags |= VR_CLIENT_HAND_AIM_VALID;
 			CL_VRGamePose( &out->aim, &in->aim, &center, world_scale );
 		}
+		if( FBitSet( in->flags, REF_VR_HAND_SQUEEZE_PRESSED ))
+			out->flags |= VR_CLIENT_HAND_SQUEEZE_PRESSED;
 	}
 
 	vr_game_client.Frame( &frame );
