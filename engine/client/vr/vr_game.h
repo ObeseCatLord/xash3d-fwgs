@@ -8,6 +8,7 @@ Copyright (C) 2026 Xash3D FWGS contributors
 
 void CL_VRGameInit( void );
 void CL_VRGameFrame( void );
+qboolean CL_VRGameBuildUsercmdSidecar( const usercmd_t *cmd, vr_usercmd_sidecar_t *sample );
 void CL_VRGameShutdown( void );
 
 #endif /* VR_GAME_H */

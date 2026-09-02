@@ -802,7 +802,6 @@ static void CL_CreateCmd( void )
 	clgame.dllFuncs.CL_CreateMove( host.frametime, cmd, active );
 	IN_EngineAppendMove( host.frametime, cmd, active );
 	CL_VRAppendMove( host.frametime, cmd, active );
-	if( !cls.demoplayback ) CL_VRBuildUsercmdSidecar( cmd, &pcmd->vr_sidecar );
 
 	CL_PopPMStates();
 
@@ -822,6 +821,7 @@ static void CL_CreateCmd( void )
 		VectorCopy( angles, cl.viewangles );
 		if( !cl.background ) pcmd->cmd.msec = 0;
 	}
+	if( !cls.demoplayback ) CL_VRBuildUsercmdSidecar( cmd, &pcmd->vr_sidecar );
 
 	// demo always have commands so don't overwrite them
 	if( !cls.demoplayback ) cl.cmd = pcmd->cmd;

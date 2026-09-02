@@ -901,6 +901,7 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, const vr_usercmd_sidecar_t *vr
 	edict_t	*clent;
 	double	frametime;
 	usercmd_t cmd;
+	qboolean vr_sidecar_active = false;
 
 	// if the player got kicked, do not process commands
 	if( cl->state <= cs_zombie )
@@ -978,11 +979,18 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, const vr_usercmd_sidecar_t *vr
 	SV_SetupPMove( svgame.pmove, cl, ucmd, cl->physinfo );
 
 	// motor! The optional sidecar is scoped strictly to this PM dispatch.
-	if( Cvar_VariableValue( "vr_controller_ladders" ) != 0.0f && vr_sidecar &&
+	if( vr_sidecar &&
 		vr_sidecar->version == VR_USERCMD_SIDECAR_VERSION && sv_vr_sidecar_begin_pm && sv_vr_sidecar_end_pm )
-		sv_vr_sidecar_begin_pm( vr_sidecar );
+	{
+		/* LADDER_VALID is the negotiated wire policy for prediction and authority. */
+		if( vr_sidecar->flags & VR_USERCMD_SIDECAR_LADDER_VALID )
+		{
+			sv_vr_sidecar_begin_pm( vr_sidecar );
+			vr_sidecar_active = true;
+		}
+	}
 	svgame.dllFuncs.pfnPM_Move( svgame.pmove, true );
-	if( sv_vr_sidecar_end_pm )
+	if( vr_sidecar_active )
 		sv_vr_sidecar_end_pm();
 
 	// copy results back to client

@@ -3273,7 +3273,26 @@ void Test_RunVRUsercmdSidecar( void )
 {
 	byte data[2 + VR_USERCMD_SIDECAR_WIRE_BYTES * 2] = { 0 };
 	vr_usercmd_sidecar_t samples[2] = { 0 };
+	vr_usercmd_sidecar_t pose = { 0 };
 	sizebuf_t msg;
+
+	/* No callback leaves a transport-only ladder sample; a valid callback adds
+	 * pose without being able to alter the ladder policy. */
+	samples[0].version = VR_USERCMD_SIDECAR_VERSION;
+	samples[0].flags = VR_USERCMD_SIDECAR_LADDER_VALID;
+	VR_UsercmdSidecarApplyPose( &samples[0], NULL );
+	TASSERT_EQi( samples[0].flags, VR_USERCMD_SIDECAR_LADDER_VALID );
+	pose.version = VR_USERCMD_SIDECAR_VERSION;
+	pose.flags = VR_USERCMD_SIDECAR_POSE_VALID | VR_USERCMD_SIDECAR_LADDER_VALID;
+	pose.weapon_position[0] = 123;
+	VR_UsercmdSidecarApplyPose( &samples[0], &pose );
+	TASSERT_EQi( samples[0].flags, VR_USERCMD_SIDECAR_LADDER_VALID | VR_USERCMD_SIDECAR_POSE_VALID );
+	TASSERT_EQi( samples[0].weapon_position[0], 123 );
+
+	TASSERT_EQi( VR_UsercmdSidecarQuantize( FLT_MAX, 8.0f ), 32767 );
+	TASSERT_EQi( VR_UsercmdSidecarQuantize( -FLT_MAX, 8.0f ), -32768 );
+	TASSERT_EQi( VR_UsercmdSidecarQuantize( 255.996f, 128.0f ), 32767 );
+	TASSERT_EQi( VR_UsercmdSidecarQuantize( -256.0f, 128.0f ), -32768 );
 
 	MSG_Init( &msg, __func__, data, sizeof( data ));
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION );
@@ -3294,6 +3313,19 @@ void Test_RunVRUsercmdSidecar( void )
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
 	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1, 1 );
 	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1, 1 );
+	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
+	memset( samples, 0, sizeof( samples ));
+	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
+	TASSERT_EQi( samples[0].flags, 0 );
+	TASSERT_EQi( samples[1].flags, 0 );
+
+	/* An unknown record size is consumed in packet order without assigning
+	 * stale samples. */
+	MSG_Init( &msg, __func__, data, sizeof( data ));
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION + 1 );
+	MSG_WriteByte( &msg, 1 );
+	MSG_WriteByte( &msg, 0xff );
+	MSG_WriteByte( &msg, 0xff );
 	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
 	memset( samples, 0, sizeof( samples ));
 	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
