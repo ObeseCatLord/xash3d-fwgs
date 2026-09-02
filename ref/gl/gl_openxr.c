@@ -1,5 +1,5 @@
 /*
-gl_openxr.c - Linux/GLX OpenXR compositor for ref_gl
+gl_openxr.c - desktop OpenXR compositor for ref_gl
 Copyright (C) 2026 Xash3D FWGS contributors
 
 This program is free software: you can redistribute it and/or modify
@@ -10,9 +10,14 @@ the Free Software Foundation, either version 3 of the License, or
 
 #if XASH_OPENXR
 
-#define XR_USE_PLATFORM_XLIB
 #define XR_USE_GRAPHICS_API_OPENGL
 
+#if defined( _WIN32 )
+#define XR_USE_PLATFORM_WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#define XR_USE_PLATFORM_XLIB
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
@@ -31,6 +36,7 @@ extern GLXDrawable glXGetCurrentDrawable( void );
 extern int glXQueryContext( Display *display, GLXContext context, int attribute, int *value );
 extern GLXFBConfig *glXChooseFBConfig( Display *display, int screen, const int *attributes, int *count );
 extern XVisualInfo *glXGetVisualFromFBConfig( Display *display, GLXFBConfig config );
+#endif
 
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
@@ -733,7 +739,11 @@ static qboolean GL_OpenXRInitialize( void )
 	XrSystemGetInfo system_info = { XR_TYPE_SYSTEM_GET_INFO };
 	PFN_xrGetOpenGLGraphicsRequirementsKHR get_requirements = NULL;
 	XrGraphicsRequirementsOpenGLKHR requirements = { XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR };
+#if defined( _WIN32 )
+	XrGraphicsBindingOpenGLWin32KHR binding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR };
+#else
 	XrGraphicsBindingOpenGLXlibKHR binding = { XR_TYPE_GRAPHICS_BINDING_OPENGL_XLIB_KHR };
+#endif
 	XrSessionCreateInfo session_info = { XR_TYPE_SESSION_CREATE_INFO };
 	XrReferenceSpaceCreateInfo space_info = { XR_TYPE_REFERENCE_SPACE_CREATE_INFO };
 	XrViewConfigurationView view_configs[REF_VR_MAX_EYES];
@@ -741,10 +751,12 @@ static qboolean GL_OpenXRInitialize( void )
 	uint32_t format_count = 0;
 	int64_t *formats = NULL;
 	int64_t selected_format = 0;
+#if !defined( _WIN32 )
 	int fbconfig_id = 0;
 	int config_count = 0;
 	GLXFBConfig *configs = NULL;
 	XVisualInfo *visual = NULL;
+#endif
 	qboolean success = false;
 
 	memset( &xr, 0, sizeof( xr ));
@@ -775,6 +787,15 @@ static qboolean GL_OpenXRInitialize( void )
 	if( !GL_OpenXRLoadGLFunctions() )
 		goto cleanup;
 
+#if defined( _WIN32 )
+	binding.hDC = wglGetCurrentDC();
+	binding.hGLRC = wglGetCurrentContext();
+	if( !binding.hDC || !binding.hGLRC )
+	{
+		gEngfuncs.Con_Printf( S_ERROR "OpenXR: a current WGL device and rendering context are required\n" );
+		goto cleanup;
+	}
+#else
 	binding.xDisplay = glXGetCurrentDisplay();
 	binding.glxContext = glXGetCurrentContext();
 	binding.glxDrawable = glXGetCurrentDrawable();
@@ -799,6 +820,7 @@ static qboolean GL_OpenXRInitialize( void )
 	if( !visual )
 		goto cleanup;
 	binding.visualid = visual->visualid;
+#endif
 
 	session_info.next = &binding;
 	session_info.systemId = xr.system_id;
@@ -868,13 +890,20 @@ static qboolean GL_OpenXRInitialize( void )
 	}
 
 	xr.initialized = true;
+#if defined( _WIN32 )
+	gEngfuncs.Con_Printf( "OpenXR: initialized Windows/WGL stereo session (%ux%u per eye)\n",
+		xr.eyes[0].width, xr.eyes[0].height );
+#else
 	gEngfuncs.Con_Printf( "OpenXR: initialized Linux/GLX stereo session (%ux%u per eye)\n",
 		xr.eyes[0].width, xr.eyes[0].height );
+#endif
 	success = true;
 
 cleanup:
+#if !defined( _WIN32 )
 	if( visual ) XFree( visual );
 	if( configs ) XFree( configs );
+#endif
 	free( formats );
 	if( !success )
 	{
