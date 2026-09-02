@@ -928,6 +928,7 @@ Runs prediction code for user cmd
 static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u, const vr_usercmd_sidecar_t *vr_sidecar, qboolean runfuncs, double *time, unsigned int random_seed )
 {
 	usercmd_t		cmd;
+	qboolean	vr_sidecar_active = false;
 
 	if( u->msec > 50 )
 	{
@@ -954,12 +955,18 @@ static void CL_RunUsercmd( local_state_t *from, local_state_t *to, usercmd_t *u,
 
 		// motor! The optional sidecar is scoped strictly to this PM dispatch.
 		CL_ResolveVRUsercmdSidecarExports();
-		if( cls.net_protocol == PROTO_CURRENT && FBitSet( cls.extensions, NET_EXT_VR_USERCMD ) &&
-			Cvar_VariableValue( "vr_controller_ladders" ) != 0.0f && vr_sidecar &&
+		if( cls.net_protocol == PROTO_CURRENT && FBitSet( cls.extensions, NET_EXT_VR_USERCMD ) && vr_sidecar &&
 			vr_sidecar->version == VR_USERCMD_SIDECAR_VERSION && cl_vr_sidecar_begin_pm && cl_vr_sidecar_end_pm )
-			cl_vr_sidecar_begin_pm( vr_sidecar );
+		{
+			/* LADDER_VALID is the negotiated wire policy for prediction and authority. */
+			if( vr_sidecar->flags & VR_USERCMD_SIDECAR_LADDER_VALID )
+			{
+				cl_vr_sidecar_begin_pm( vr_sidecar );
+				vr_sidecar_active = true;
+			}
+		}
 		clgame.dllFuncs.pfnPlayerMove( clgame.pmove, false );
-		if( cl_vr_sidecar_end_pm )
+		if( vr_sidecar_active )
 			cl_vr_sidecar_end_pm();
 
 		// copy results back to client

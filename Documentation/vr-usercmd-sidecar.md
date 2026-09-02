@@ -22,8 +22,22 @@ the advertised record size. Truncated records drop the client before movement.
 The engine keeps a sample next to each client command-ring entry and retains
 the last accepted sample for dropped-command replay. PM receives it only via
 optional begin/end exports around one dispatch; the base game DLL clears that
-transient state immediately afterwards. Missing exports, missing capability,
-invalid/stale records, or `vr_controller_ladders 0` use normal view angles.
+transient state immediately afterwards. `LADDER_VALID` is the wire policy: if
+it is clear both prediction and the server use normal view angles, and if it
+is set both use the encoded controller angles. A local server cvar never
+overrides that negotiated per-command decision.
+
+The optional `vr_client_api_t::BuildUsercmdSidecar` v2 tail lets a current
+client DLL fill the final gameplay pose after its own weapon policy. On i386
+Linux, the v2 base table remains 16 bytes (`Frame` at 8, `Shutdown` at 12) and
+the optional callback is at offset 16, making the extended table 20 bytes.
+The engine sets `struct_size` to its writable table size before the export;
+the DLL returns the size it actually filled. Thus a 16-byte older DLL remains
+valid. The callback receives a 20-byte independent usercmd view (final
+viewangles and frametime), never `usercmd_t`, and may set only pose fields;
+the engine preserves ladder fields. With no tail callback, the engine sends
+only ladder data and leaves `POSE_VALID` clear.
+
 The server's optional pose export updates the owning player's authoritative
-pose before `PlayerPreThink`/`ItemPostFrame`; `updatevr` remains a fallback
+pose before `PlayerPreThink`/`ItemPostFrame`; `updatevr` remains the fallback
 while no fresh usercmd pose is available.

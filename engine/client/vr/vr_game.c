@@ -61,6 +61,9 @@ void CL_VRGameInit( void )
 		return;
 
 	memset( &vr_game_client, 0, sizeof( vr_game_client ));
+	/* struct_size is also the writable size supplied to a newer client DLL.
+	 * Older v2 DLLs ignore it and report the 16-byte base API on return. */
+	vr_game_client.struct_size = sizeof( vr_game_client );
 	if( !GetVRClientAPI( &engine_api, &vr_game_client ) || vr_game_client.version != VR_CLIENT_API_VERSION ||
 		vr_game_client.struct_size < VR_CLIENT_API_MIN_SIZE || !vr_game_client.Frame || !vr_game_client.Shutdown )
 	{
@@ -71,6 +74,27 @@ void CL_VRGameInit( void )
 
 	vr_game_initialized = true;
 	Con_Reportf( "VR client API v%u initialized\n", VR_CLIENT_API_VERSION );
+}
+
+qboolean CL_VRGameBuildUsercmdSidecar( const usercmd_t *cmd, vr_usercmd_sidecar_t *sample )
+{
+	vr_client_usercmd_t input;
+	vr_usercmd_sidecar_t pose = { 0 };
+
+	if( !vr_game_initialized || !cmd || !sample ||
+		vr_game_client.struct_size < VR_CLIENT_API_SIDECAR_SIZE || !vr_game_client.BuildUsercmdSidecar )
+		return false;
+
+	input.struct_size = sizeof( input );
+	VectorCopy( cmd->viewangles, input.viewangles );
+	input.frametime = (float)cmd->msec * ( 1.0f / 1000.0f );
+	if( !vr_game_client.BuildUsercmdSidecar( &input, &pose ) ||
+		pose.version != VR_USERCMD_SIDECAR_VERSION || !( pose.flags & VR_USERCMD_SIDECAR_POSE_VALID ))
+		return false;
+
+	/* Transport owns ladder selection. The game DLL owns only final pose policy. */
+	VR_UsercmdSidecarApplyPose( sample, &pose );
+	return true;
 }
 
 void CL_VRGameFrame( void )
