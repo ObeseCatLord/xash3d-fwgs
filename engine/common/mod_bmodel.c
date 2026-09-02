@@ -2294,6 +2294,101 @@ static int Mod_LoadEntities_splitstr_handler( char *prev, char *next, void *user
 	return 0;
 }
 
+typedef enum
+{
+	ENTPARSE_EXPECT_ENTITY,
+	ENTPARSE_EXPECT_KEY,
+	ENTPARSE_EXPECT_VALUE,
+} entity_parse_state_t;
+
+static qboolean Mod_IsNonTextEntityPadding( const char *token, int token_len, qboolean quoted )
+{
+	if( quoted || token_len <= 0 )
+		return false;
+
+	for( int i = 0; i < token_len; i++ )
+	{
+		if(( byte )token[i] < 0x7f )
+			return false;
+	}
+
+	return true;
+}
+
+/*
+=================
+Mod_NormalizeEntityLump
+
+Terminate non-text padding after the final structurally complete entity. Any
+malformed data before another complete entity is left for consumers to reject.
+=================
+*/
+static void Mod_NormalizeEntityLump( char *entities )
+{
+	entity_parse_state_t state = ENTPARSE_EXPECT_ENTITY;
+	char token[MAX_TOKEN];
+	char *pfile = entities;
+	char *last_entity_end = NULL;
+	qboolean trailing_garbage = false;
+	qboolean quoted;
+	int token_len;
+
+	while( pfile )
+	{
+		char *next = COM_ParseFileSafe( pfile, token, sizeof( token ), 0, &token_len, &quoted );
+
+		if( !next )
+			break;
+
+		pfile = next;
+
+		switch( state )
+		{
+		case ENTPARSE_EXPECT_ENTITY:
+			if( !quoted && token[0] == '{' && token[1] == '\0' )
+			{
+				state = ENTPARSE_EXPECT_KEY;
+			}
+			else
+			{
+				if( !last_entity_end || !Mod_IsNonTextEntityPadding( token, token_len, quoted ))
+					return;
+
+				trailing_garbage = true;
+			}
+			break;
+		case ENTPARSE_EXPECT_KEY:
+			if( !quoted && token[0] == '}' && token[1] == '\0' )
+			{
+				// Garbage followed by a complete entity is between entities.
+				if( trailing_garbage )
+					return;
+
+				last_entity_end = pfile;
+				state = ENTPARSE_EXPECT_ENTITY;
+			}
+			else if( !quoted && ( token[0] == '{' || token[0] == '}' ) && token[1] == '\0' )
+			{
+				return;
+			}
+			else
+			{
+				state = ENTPARSE_EXPECT_VALUE;
+			}
+			break;
+		case ENTPARSE_EXPECT_VALUE:
+			if( !quoted && ( token[0] == '{' || token[0] == '}' ) && token[1] == '\0' )
+				return;
+
+			state = ENTPARSE_EXPECT_KEY;
+			break;
+		}
+	}
+
+	if( state == ENTPARSE_EXPECT_ENTITY && trailing_garbage )
+		*last_entity_end = '\0';
+}
+
 /*
 =================
 Mod_LoadEntities
@@ -2339,6 +2434,7 @@ static void Mod_LoadEntities( model_t *mod, const dbspmodel_t *bmod )
 	mod->entities = Mem_Malloc( mod->mempool, entdatasize + 1 );
 	memcpy( mod->entities, entdata, entdatasize ); // moving to private model pool
 	mod->entities[entdatasize] = 0;
+	Mod_NormalizeEntityLump( mod->entities );
 
 	Mem_Free( entpatch ); // release entpatch if present
 	entpatch = NULL;
@@ -4426,6 +4522,52 @@ void Mod_LoadBrushModel( model_t *mod, void *buffer, size_t buffersize, qboolean
 
 	if( loaded ) *loaded = true;	// all done
 }
+
+#if XASH_ENGINE_TESTS
+#include "tests.h"
+
+static void Test_NormalizeEntityLump( void )
+{
+	char valid_whitespace[] = "{\n\"classname\" \"worldspawn\"\n}\r\n";
+	char valid_nul[] = { '{', '}', '\0', (char)0xb7, '\0' };
+	char trailing_padding[] = "{\n\"classname\" \"worldspawn\"\n\"message\" \"test\"\n}\r\n\xb7";
+	char printable_tail[] = "{}\nstray\n";
+	char incomplete_entity[] = "{}\n{\n\"key\" \"value\"";
+	char quoted_comment_braces[] = "{\n\"key\" \"{quoted}\"\n// { comment }\n\"other\" \"value\"\n}\n";
+	char trailing_false_braces[] = "{}\n\xb7\n\"{\"\n// {\n";
+	char malformed_between[] = { '{', '}', '\n', (char)0xb7, '\n', '{', '}', '\0' };
+	size_t valid_whitespace_len = Q_strlen( valid_whitespace );
+	size_t printable_tail_len = Q_strlen( printable_tail );
+	size_t incomplete_entity_len = Q_strlen( incomplete_entity );
+	size_t quoted_comment_braces_len = Q_strlen( quoted_comment_braces );
+	size_t trailing_false_braces_len = Q_strlen( trailing_false_braces );
+	char *worldspawn_end = strrchr( trailing_padding, '}' );
+
+	Mod_NormalizeEntityLump( valid_whitespace );
+	Mod_NormalizeEntityLump( valid_nul );
+	Mod_NormalizeEntityLump( trailing_padding );
+	Mod_NormalizeEntityLump( printable_tail );
+	Mod_NormalizeEntityLump( incomplete_entity );
+	Mod_NormalizeEntityLump( quoted_comment_braces );
+	Mod_NormalizeEntityLump( trailing_false_braces );
+	Mod_NormalizeEntityLump( malformed_between );
+
+	TASSERT_EQi( Q_strlen( valid_whitespace ), valid_whitespace_len );
+	TASSERT_EQi( valid_nul[2], '\0' );
+	TASSERT_EQi(( byte )valid_nul[3], 0xb7 );
+	TASSERT_EQi( worldspawn_end[1], '\0' );
+	TASSERT_EQi( Q_strlen( printable_tail ), printable_tail_len );
+	TASSERT_EQi( Q_strlen( incomplete_entity ), incomplete_entity_len );
+	TASSERT_EQi( Q_strlen( quoted_comment_braces ), quoted_comment_braces_len );
+	TASSERT_EQi( Q_strlen( trailing_false_braces ), trailing_false_braces_len );
+	TASSERT_EQi(( byte )malformed_between[3], 0xb7 );
+}
+
+void Test_RunBmodel( void )
+{
+	TRUN( Test_NormalizeEntityLump() );
+}
+#endif /* XASH_ENGINE_TESTS */
 
 /*
 ==================
