@@ -408,6 +408,19 @@ void CL_VRFrameBegin( void )
 			vr_previous_buttons[i] = vr_frame.hands[i].buttons;
 		return;
 	}
+	/* Lambda1VR assigns the off-hand stick click to the laser sight while
+	 * unscoped, and to scope smoothing while scoped. Do not also toggle it
+	 * when both stick clicks are being used as the desktop menu fallback. */
+	if( !( old_offhand_buttons & REF_VR_BUTTON_STICK ) &&
+		FBitSet( vr_frame.hands[offhand].buttons, REF_VR_BUTTON_STICK ) &&
+		!FBitSet( vr_frame.hands[dominant].buttons, REF_VR_BUTTON_STICK ))
+	{
+		if( Cvar_VariableValue( "vr_scope_engaged" ) != 0.0f )
+			Cvar_SetValue( "vr_scope_stabilise",
+				Cvar_VariableValue( "vr_scope_stabilise" ) == 0.0f ? 1.0f : 0.0f );
+		else
+			Cvar_SetValue( vr_lasersight.name, (int)( vr_lasersight.value + 1.0f ) % 3 );
+	}
 	if( vr_confirm_attack_release )
 	{
 		Cbuf_AddText( "-attack\n" );
