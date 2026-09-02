@@ -3680,6 +3680,7 @@ static void CL_InitLocal( void )
 	Cvar_RegisterVariable( &cl_advertise_engine_in_name );
 	Cvar_RegisterVariable( &cl_log_outofband );
 	Cvar_RegisterVariable( &cl_autorecord );
+	CL_VRRegisterCvars();
 
 	Cvar_RegisterVariable( &showpause );
 	Cvar_RegisterVariable( &mp_decals );

@@ -15,12 +15,14 @@ the Free Software Foundation, either version 3 of the License, or
 #include "vr_client.h"
 #include "vr_game.h"
 
+static CVAR_DEFINE_AUTO( vr_enable, "0", FCVAR_ARCHIVE, "enable desktop OpenXR rendering" );
 static CVAR_DEFINE_AUTO( vr_worldscale, "40", FCVAR_ARCHIVE, "game units per physical metre" );
 static CVAR_DEFINE_AUTO( vr_control_scheme, "0", FCVAR_ARCHIVE, "Lambda1VR control scheme; values >= 10 use the left weapon hand" );
+static CVAR_DEFINE_AUTO( vr_comfort_moving, "0", 0, "whether VR locomotion is active for comfort masking" );
 static CVAR_DEFINE_AUTO( vr_turn_angle, "45", FCVAR_ARCHIVE, "snap-turn angle, or smooth-turn speed basis" );
 static CVAR_DEFINE_AUTO( vr_smoothturn, "0", FCVAR_ARCHIVE, "use continuous turning instead of snap turning" );
-static CVAR_DEFINE_AUTO( vr_walkdirection, "0", FCVAR_ARCHIVE, "movement direction: 0 off-hand, 1 head" );
-static CVAR_DEFINE_AUTO( vr_reloadtimeoutms, "300", FCVAR_ARCHIVE, "maximum squeeze tap duration used for reload" );
+static CVAR_DEFINE_AUTO( vr_walkdirection, "1", FCVAR_ARCHIVE, "movement direction: 0 off-hand, 1 head" );
+static CVAR_DEFINE_AUTO( vr_reloadtimeoutms, "200", FCVAR_ARCHIVE, "maximum squeeze tap duration used for reload" );
 static CVAR_DEFINE_AUTO( vr_enable_crouching, "1", FCVAR_ARCHIVE, "enable physical crouching" );
 static CVAR_DEFINE_AUTO( vr_crouch_threshold, "0.32", FCVAR_ARCHIVE, "physical crouch distance in metres" );
 static CVAR_DEFINE_AUTO( vr_positional_factor, "1", FCVAR_ARCHIVE, "room-scale movement multiplier" );
@@ -74,6 +76,30 @@ static float vr_body_view_yaw;
 static qboolean vr_body_view_valid;
 
 static void CL_VRTransformVector( const vec3_t in, const ref_vr_pose_t *origin, vec3_t out );
+
+void CL_VRRegisterCvars( void )
+{
+	Cvar_RegisterVariable( &vr_enable );
+	Cvar_RegisterVariable( &vr_worldscale );
+	Cvar_RegisterVariable( &vr_control_scheme );
+	Cvar_RegisterVariable( &vr_comfort_moving );
+	Cvar_RegisterVariable( &vr_turn_angle );
+	Cvar_RegisterVariable( &vr_smoothturn );
+	Cvar_RegisterVariable( &vr_walkdirection );
+	Cvar_RegisterVariable( &vr_reloadtimeoutms );
+	Cvar_RegisterVariable( &vr_enable_crouching );
+	Cvar_RegisterVariable( &vr_crouch_threshold );
+	Cvar_RegisterVariable( &vr_positional_factor );
+	Cvar_RegisterVariable( &vr_quick_crouchjump );
+	Cvar_RegisterVariable( &vr_gesture_triggered_use );
+	Cvar_RegisterVariable( &vr_use_gesture_boundary );
+	Cvar_RegisterVariable( &vr_controller_tracking_haptic );
+	Cvar_RegisterVariable( &vr_backpack_weapon );
+	Cvar_RegisterVariable( &vr_lasersight );
+	Cvar_RegisterVariable( &vr_height_adjust );
+	Cvar_RegisterVariable( &vr_headtorch );
+	Cvar_RegisterVariable( &vr_reversetorch );
+}
 
 static qboolean CL_VRHandPosition( int hand, vec3_t position )
 {
@@ -136,7 +162,7 @@ static void CL_VRResetUIPointer( void )
 static void CL_VRResetInputState( qboolean release_menu )
 {
 	CL_VRResetUIPointer();
-	Cvar_SetValue( "vr_comfort_moving", 0.0f );
+	Cvar_SetValue( vr_comfort_moving.name, 0.0f );
 	if( release_menu )
 	{
 		if( vr_menu_active )
@@ -676,7 +702,7 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		!FBitSet( vr_frame.flags, REF_VR_FRAME_FOCUSED ) ||
 		!FBitSet( vr_frame.flags, REF_VR_FRAME_ACTIONS_VALID ))
 	{
-		Cvar_SetValue( "vr_comfort_moving", 0.0f );
+		Cvar_SetValue( vr_comfort_moving.name, 0.0f );
 		return;
 	}
 
@@ -701,7 +727,7 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	}
 	if( Cvar_VariableValue( "vr_scope_engaged" ) != 0.0f )
 		x = y = 0.0f;
-	Cvar_SetValue( "vr_comfort_moving", fabs( x ) + fabs( y ) > 0.01f ||
+	Cvar_SetValue( vr_comfort_moving.name, fabs( x ) + fabs( y ) > 0.01f ||
 		( variant != 3 && vr_smoothturn.value && fabs( turn->stick[0] ) > 0.6f ) ? 1.0f : 0.0f );
 	heading = 0.0f;
 	if( variant != 3 && vr_walkdirection.value < 0.5f && FBitSet( move->flags, REF_VR_HAND_AIM_VALID ) &&
