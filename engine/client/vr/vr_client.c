@@ -23,8 +23,10 @@ static CVAR_DEFINE_AUTO( vr_turn_angle, "45", FCVAR_ARCHIVE, "snap-turn angle, o
 static CVAR_DEFINE_AUTO( vr_smoothturn, "0", FCVAR_ARCHIVE, "use continuous turning instead of snap turning" );
 static CVAR_DEFINE_AUTO( vr_walkdirection, "1", FCVAR_ARCHIVE, "movement direction: 0 off-hand, 1 head" );
 static CVAR_DEFINE_AUTO( vr_reloadtimeoutms, "200", FCVAR_ARCHIVE, "maximum squeeze tap duration used for reload" );
-static CVAR_DEFINE_AUTO( vr_enable_crouching, "1", FCVAR_ARCHIVE, "enable physical crouching" );
-static CVAR_DEFINE_AUTO( vr_crouch_threshold, "0.32", FCVAR_ARCHIVE, "physical crouch distance in metres" );
+static CVAR_DEFINE_AUTO( vr_enable_crouching, "0.85", FCVAR_ARCHIVE,
+	"physical crouch standing-height multiplier; active from 0 to 0.98" );
+static CVAR_DEFINE_AUTO( vr_crouch_threshold, "0.32", FCVAR_ARCHIVE,
+	"deprecated; physical crouch uses vr_enable_crouching standing-height multiplier" );
 static CVAR_DEFINE_AUTO( vr_positional_factor, "1", FCVAR_ARCHIVE, "room-scale movement multiplier" );
 static CVAR_DEFINE_AUTO( vr_quick_crouchjump, "1", FCVAR_ARCHIVE, "double-tap jump to perform a crouch jump" );
 static CVAR_DEFINE_AUTO( vr_gesture_triggered_use, "1", FCVAR_ARCHIVE, "reach away from the body to use with either hand" );
@@ -58,6 +60,7 @@ static qboolean vr_scoreboard_active;
 static qboolean vr_offhand_use_active;
 static qboolean vr_jump_held;
 static qboolean vr_quick_crouch;
+static qboolean vr_physical_crouched;
 static double vr_last_jump_press;
 static qboolean vr_selecting_weapon;
 static qboolean vr_confirm_attack_release;
@@ -133,6 +136,37 @@ static qboolean CL_VRIsBackpack( int hand )
 	return horizontal > 0.001f && local[0] < -0.5f * horizontal;
 }
 
+static qboolean CL_VRHandSqueezePressed( const ref_vr_hand_t *hand )
+{
+	return hand && FBitSet( hand->flags, REF_VR_HAND_SQUEEZE_PRESSED );
+}
+
+static qboolean CL_VRPhysicalCrouchState( qboolean latched, float multiplier, float standing_height,
+	float head_height )
+{
+	if( multiplier <= 0.0f || multiplier >= 0.98f )
+		return false;
+	if( !latched )
+		return head_height < standing_height * multiplier;
+	return head_height <= standing_height * ( multiplier + 0.02f );
+}
+
+static void CL_VRResetPhysicalCrouch( void )
+{
+	vr_physical_crouched = false;
+}
+
+static void CL_VRUpdatePhysicalCrouch( void )
+{
+	if( !vr_center_valid || !FBitSet( vr_frame.flags, REF_VR_FRAME_HEAD_VALID ))
+	{
+		CL_VRResetPhysicalCrouch();
+		return;
+	}
+	vr_physical_crouched = CL_VRPhysicalCrouchState( vr_physical_crouched, vr_enable_crouching.value,
+		vr_center.position[2], vr_frame.head.position[2] );
+}
+
 static qboolean CL_VRUseGesture( int hand )
 {
 	vec3_t position, delta;
@@ -183,6 +217,7 @@ static void CL_VRResetInputState( qboolean release_menu )
 	vr_offhand_use_active = false;
 	vr_jump_held = false;
 	vr_quick_crouch = false;
+	CL_VRResetPhysicalCrouch();
 	vr_last_jump_press = 0.0;
 	vr_selecting_weapon = false;
 	vr_confirm_attack_release = false;
@@ -211,7 +246,7 @@ static void CL_VROneControllerInput( int dominant, int offhand, uint32_t old_dom
 {
 	const ref_vr_hand_t *weapon = &vr_frame.hands[dominant];
 	const ref_vr_hand_t *other = &vr_frame.hands[offhand];
-	qboolean squeeze = weapon->squeeze >= 0.7f;
+	qboolean squeeze = CL_VRHandSqueezePressed( weapon );
 	qboolean stick = FBitSet( weapon->buttons, REF_VR_BUTTON_STICK );
 	qboolean old_stick = FBitSet( old_dominant_buttons, REF_VR_BUTTON_STICK );
 
@@ -462,13 +497,13 @@ void CL_VRFrameBegin( void )
 
 	if( vr_backpack_weapon_active )
 	{
-		if( vr_frame.hands[dominant].squeeze < 0.7f )
+		if( !CL_VRHandSqueezePressed( &vr_frame.hands[dominant] ))
 		{
 			Cbuf_AddText( "lastinv\n" );
 			vr_backpack_weapon_active = false;
 		}
 	}
-	else if( vr_weapon_in_backpack && vr_frame.hands[dominant].squeeze >= 0.7f )
+	else if( vr_weapon_in_backpack && CL_VRHandSqueezePressed( &vr_frame.hands[dominant] ))
 	{
 		CL_VRCommand( vr_backpack_weapon.string );
 		CL_VRHaptic( dominant, 0.08f, 0.0f, 0.8f );
@@ -477,9 +512,9 @@ void CL_VRFrameBegin( void )
 	}
 	else if( !vr_weapon_in_backpack )
 	{
-		if( vr_frame.hands[dominant].squeeze >= 0.7f && vr_squeeze_time == 0.0 )
+		if( CL_VRHandSqueezePressed( &vr_frame.hands[dominant] ) && vr_squeeze_time == 0.0 )
 			vr_squeeze_time = host.realtime;
-		else if( vr_frame.hands[dominant].squeeze < 0.7f && vr_squeeze_time != 0.0 )
+		else if( !CL_VRHandSqueezePressed( &vr_frame.hands[dominant] ) && vr_squeeze_time != 0.0 )
 		{
 			if(( host.realtime - vr_squeeze_time ) * 1000.0 <= vr_reloadtimeoutms.value )
 			{
@@ -799,7 +834,7 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	else
 	{
 		if( weapon->trigger >= 0.55f )
-			SetBits( cmd->buttons, weapon->squeeze >= 0.7f ? IN_ATTACK2 : IN_ATTACK );
+			SetBits( cmd->buttons, CL_VRHandSqueezePressed( weapon ) ? IN_ATTACK2 : IN_ATTACK );
 		if( move->trigger >= 0.55f ) SetBits( cmd->buttons, IN_RUN );
 		if( FBitSet( weapon->buttons, REF_VR_BUTTON_STICK )) SetBits( cmd->buttons, IN_USE );
 	}
@@ -822,7 +857,8 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 		}
 	}
 	else if( vr_jump_held ) SetBits( cmd->buttons, IN_JUMP );
-	if( vr_enable_crouching.value && vr_center.position[2] - vr_frame.head.position[2] > vr_crouch_threshold.value )
+	CL_VRUpdatePhysicalCrouch();
+	if( vr_physical_crouched )
 		SetBits( cmd->buttons, IN_DUCK );
 	if( vr_reload_pulse )
 	{
@@ -980,3 +1016,26 @@ qboolean CL_VRGetFlashlightPose( vec3_t origin, vec3_t forward )
 	VectorNormalize( forward );
 	return true;
 }
+
+#if XASH_ENGINE_TESTS
+#include "tests.h"
+
+void Test_RunVRInputPolicy( void )
+{
+	TASSERT( !REF_VR_SQUEEZE_PRESSED( 0.5f ));
+	TASSERT( REF_VR_SQUEEZE_PRESSED( 0.5001f ));
+	TASSERT( CL_VRPhysicalCrouchState( false, 0.85f, 1.0f, 0.84f ));
+	TASSERT( !CL_VRPhysicalCrouchState( false, 0.85f, 1.0f, 0.86f ));
+	TASSERT( CL_VRPhysicalCrouchState( true, 0.85f, 1.0f, 0.86f ));
+	TASSERT( !CL_VRPhysicalCrouchState( true, 0.85f, 1.0f, 0.88f ));
+	TASSERT( !CL_VRPhysicalCrouchState( true, 0.0f, 1.80f, 1.00f ));
+	vr_physical_crouched = true;
+	/* Focus and session loss both take this reset path. */
+	CL_VRResetInputState( false );
+	TASSERT( !vr_physical_crouched );
+	vr_physical_crouched = true;
+	vr_center_valid = false;
+	CL_VRUpdatePhysicalCrouch();
+	TASSERT( !vr_physical_crouched );
+}
+#endif

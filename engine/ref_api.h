@@ -252,6 +252,8 @@ typedef enum ref_graphic_apis_e
 
 #define REF_VR_HAND_LEFT 0
 #define REF_VR_HAND_RIGHT 1
+#define REF_VR_SQUEEZE_PRESS_THRESHOLD 0.5f
+#define REF_VR_SQUEEZE_PRESSED( value ) ( ( value ) > REF_VR_SQUEEZE_PRESS_THRESHOLD )
 
 typedef enum ref_vr_frame_flags_e
 {
@@ -278,6 +280,8 @@ typedef enum ref_vr_hand_flags_e
 	REF_VR_HAND_GRIP_VALID = BIT( 0 ),
 	REF_VR_HAND_AIM_VALID  = BIT( 1 ),
 	REF_VR_HAND_UI_VALID   = BIT( 2 ),
+	/* Normalized from the raw squeeze action by the renderer. */
+	REF_VR_HAND_SQUEEZE_PRESSED = BIT( 3 ),
 } ref_vr_hand_flags_t;
 
 typedef enum ref_vr_button_bits_e
