@@ -295,6 +295,11 @@ def build(bld):
 			install_path = None
 
 		linkflags = []
+		# SV_TargetedSoundV1 is looked up by optional game-DLL code with dlsym.
+		# Executables need an explicit dynamic export; shared launcher engines
+		# retain the symbol through its default visibility.
+		if bld.env.DEST_OS == 'linux' and not bld.env.LAUNCHER:
+			linkflags = ['-Wl,--export-dynamic-symbol=SV_TargetedSoundV1']
 
 		if bld.env.DEST_OS == 'emscripten':
 			linkflags = ['-sINITIAL_MEMORY=134217728', '-sALLOW_MEMORY_GROWTH=1', '-sSTACK_SIZE=16777216']
