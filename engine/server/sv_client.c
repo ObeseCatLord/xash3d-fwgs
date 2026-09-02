@@ -3258,14 +3258,25 @@ static qboolean SV_ReadVRUsercmdSidecars( sizebuf_t *msg, vr_usercmd_sidecar_t *
 #ifdef XASH_ENGINE_TESTS
 #include "tests.h"
 
-static void Test_WriteVRUsercmdSidecarRecord( sizebuf_t *msg, byte flags, int16_t ladderPitch, int16_t ladderYaw )
+static void Test_WriteVRUsercmdSidecarValue( byte *record, int *offset, int16_t value )
+{
+	uint16_t wire = (uint16_t)value;
+	record[(*offset)++] = wire & 0xff;
+	record[(*offset)++] = wire >> 8;
+}
+
+static void Test_WriteVRUsercmdSidecarRecord( sizebuf_t *msg, const vr_usercmd_sidecar_t *sample )
 {
 	byte record[VR_USERCMD_SIDECAR_WIRE_BYTES] = { 0 };
-	record[0] = flags;
-	record[1] = ladderPitch & 0xff;
-	record[2] = ( ladderPitch >> 8 ) & 0xff;
-	record[3] = ladderYaw & 0xff;
-	record[4] = ( ladderYaw >> 8 ) & 0xff;
+	int offset = 1, field;
+	record[0] = sample->flags;
+	for( field = 0; field < 2; ++field ) Test_WriteVRUsercmdSidecarValue( record, &offset, sample->ladder_angles[field] );
+	for( field = 0; field < 3; ++field ) Test_WriteVRUsercmdSidecarValue( record, &offset, sample->weapon_position[field] );
+	for( field = 0; field < 3; ++field ) Test_WriteVRUsercmdSidecarValue( record, &offset, sample->weapon_angles[field] );
+	for( field = 0; field < 3; ++field ) Test_WriteVRUsercmdSidecarValue( record, &offset, sample->weapon_velocity[field] );
+	for( field = 0; field < 3; ++field ) Test_WriteVRUsercmdSidecarValue( record, &offset, sample->offhand_position[field] );
+	for( field = 0; field < 3; ++field ) Test_WriteVRUsercmdSidecarValue( record, &offset, sample->offhand_angles[field] );
+	TASSERT_EQi( offset, VR_USERCMD_SIDECAR_WIRE_BYTES );
 	MSG_WriteBytes( msg, record, sizeof( record ));
 }
 
@@ -3274,6 +3285,7 @@ void Test_RunVRUsercmdSidecar( void )
 	byte data[2 + VR_USERCMD_SIDECAR_WIRE_BYTES * 2] = { 0 };
 	vr_usercmd_sidecar_t samples[2] = { 0 };
 	vr_usercmd_sidecar_t pose = { 0 };
+	vr_usercmd_sidecar_t written[2] = { 0 };
 	sizebuf_t msg;
 
 	/* No callback leaves a transport-only ladder sample; a valid callback adds
@@ -3297,8 +3309,29 @@ void Test_RunVRUsercmdSidecar( void )
 	MSG_Init( &msg, __func__, data, sizeof( data ));
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION );
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
-	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1024, -2048 );
-	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_POSE_VALID, -512, 768 );
+	written[1].flags = VR_USERCMD_SIDECAR_LADDER_VALID;
+	written[1].ladder_angles[0] = 1024;
+	written[1].ladder_angles[1] = -2048;
+	written[0].flags = VR_USERCMD_SIDECAR_POSE_VALID | 0x80;
+	written[0].ladder_angles[0] = -512;
+	written[0].ladder_angles[1] = 768;
+	written[0].weapon_position[0] = 101;
+	written[0].weapon_position[1] = -202;
+	written[0].weapon_position[2] = 303;
+	written[0].weapon_angles[0] = -404;
+	written[0].weapon_angles[1] = 505;
+	written[0].weapon_angles[2] = -606;
+	written[0].weapon_velocity[0] = 707;
+	written[0].weapon_velocity[1] = -808;
+	written[0].weapon_velocity[2] = 909;
+	written[0].offhand_position[0] = -1001;
+	written[0].offhand_position[1] = 1102;
+	written[0].offhand_position[2] = -1203;
+	written[0].offhand_angles[0] = 1304;
+	written[0].offhand_angles[1] = -1405;
+	written[0].offhand_angles[2] = 1506;
+	Test_WriteVRUsercmdSidecarRecord( &msg, &written[1] );
+	Test_WriteVRUsercmdSidecarRecord( &msg, &written[0] );
 	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
 	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
 	TASSERT_EQi( samples[1].flags, VR_USERCMD_SIDECAR_LADDER_VALID );
@@ -3307,22 +3340,40 @@ void Test_RunVRUsercmdSidecar( void )
 	TASSERT_EQi( samples[0].flags, VR_USERCMD_SIDECAR_POSE_VALID );
 	TASSERT_EQi( samples[0].ladder_angles[0], -512 );
 	TASSERT_EQi( samples[0].ladder_angles[1], 768 );
+	TASSERT_EQi( samples[0].weapon_position[0], 101 );
+	TASSERT_EQi( samples[0].weapon_position[1], -202 );
+	TASSERT_EQi( samples[0].weapon_position[2], 303 );
+	TASSERT_EQi( samples[0].weapon_angles[0], -404 );
+	TASSERT_EQi( samples[0].weapon_angles[1], 505 );
+	TASSERT_EQi( samples[0].weapon_angles[2], -606 );
+	TASSERT_EQi( samples[0].weapon_velocity[0], 707 );
+	TASSERT_EQi( samples[0].weapon_velocity[1], -808 );
+	TASSERT_EQi( samples[0].weapon_velocity[2], 909 );
+	TASSERT_EQi( samples[0].offhand_position[0], -1001 );
+	TASSERT_EQi( samples[0].offhand_position[1], 1102 );
+	TASSERT_EQi( samples[0].offhand_position[2], -1203 );
+	TASSERT_EQi( samples[0].offhand_angles[0], 1304 );
+	TASSERT_EQi( samples[0].offhand_angles[1], -1405 );
+	TASSERT_EQi( samples[0].offhand_angles[2], 1506 );
 
 	MSG_Init( &msg, __func__, data, sizeof( data ));
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION + 1 );
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_WIRE_BYTES );
-	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1, 1 );
-	Test_WriteVRUsercmdSidecarRecord( &msg, VR_USERCMD_SIDECAR_LADDER_VALID, 1, 1 );
+	written[0].flags = VR_USERCMD_SIDECAR_LADDER_VALID;
+	written[0].ladder_angles[0] = written[0].ladder_angles[1] = 1;
+	Test_WriteVRUsercmdSidecarRecord( &msg, &written[0] );
+	Test_WriteVRUsercmdSidecarRecord( &msg, &written[0] );
 	MSG_StartReading( &msg, data, sizeof( data ), 0, MSG_GetNumBitsWritten( &msg ));
 	memset( samples, 0, sizeof( samples ));
 	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
 	TASSERT_EQi( samples[0].flags, 0 );
 	TASSERT_EQi( samples[1].flags, 0 );
+	TASSERT_EQi( MSG_GetNumBitsLeft( &msg ), 0 );
 
 	/* An unknown record size is consumed in packet order without assigning
 	 * stale samples. */
 	MSG_Init( &msg, __func__, data, sizeof( data ));
-	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION + 1 );
+	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION );
 	MSG_WriteByte( &msg, 1 );
 	MSG_WriteByte( &msg, 0xff );
 	MSG_WriteByte( &msg, 0xff );
@@ -3331,6 +3382,7 @@ void Test_RunVRUsercmdSidecar( void )
 	TASSERT( SV_ReadVRUsercmdSidecars( &msg, samples, 2 ));
 	TASSERT_EQi( samples[0].flags, 0 );
 	TASSERT_EQi( samples[1].flags, 0 );
+	TASSERT_EQi( MSG_GetNumBitsLeft( &msg ), 0 );
 
 	MSG_Init( &msg, __func__, data, sizeof( data ));
 	MSG_WriteByte( &msg, VR_USERCMD_SIDECAR_VERSION );
