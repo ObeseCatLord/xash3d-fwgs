@@ -1,5 +1,8 @@
 # Desktop OpenXR Lambda1VR port
 
+> Historical implementation plan. For current source-completeness status and
+> the remaining runtime acceptance matrix, see `openxr-completeness-audit.md`.
+
 This branch ports Lambda1VR's user-visible VR behavior to current Xash3D FWGS
 for desktop Linux and Windows. Android is a behavioral reference, not a target.
 

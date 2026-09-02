@@ -1,5 +1,8 @@
 # Desktop OpenXR continuation plan
 
+> Historical phase plan. For the current post-implementation matrix and the
+> remaining runtime acceptance work, see `openxr-completeness-audit.md`.
+
 ## Goal and boundaries
 
 Deliver Lambda1VR-equivalent behavior on desktop Linux and Windows while
