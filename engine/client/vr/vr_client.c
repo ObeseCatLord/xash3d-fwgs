@@ -34,6 +34,8 @@ static CVAR_DEFINE_AUTO( vr_use_gesture_boundary, "0.35", FCVAR_ARCHIVE, "horizo
 static CVAR_DEFINE_AUTO( vr_controller_tracking_haptic, "1", FCVAR_ARCHIVE, "haptic feedback for tracked interaction boundaries" );
 static CVAR_DEFINE_AUTO( vr_backpack_weapon, "weapon_crowbar", FCVAR_ARCHIVE, "weapon selected by the dominant-hand backpack gesture" );
 static CVAR_DEFINE_AUTO( vr_lasersight, "0", FCVAR_ARCHIVE, "laser sight mode" );
+static CVAR_DEFINE_AUTO( vr_mirror_weapons, "0", FCVAR_ARCHIVE, "mirror weapon viewmodels for left-handed use" );
+static CVAR_DEFINE_AUTO( vr_weapon_backface_culling, "0", FCVAR_ARCHIVE, "enable back-face culling on weapon viewmodels" );
 static CVAR_DEFINE_AUTO( vr_height_adjust, "0", FCVAR_ARCHIVE, "additional VR eye height in metres" );
 static CVAR_DEFINE_AUTO( vr_headtorch, "0", FCVAR_ARCHIVE, "attach the flashlight beam to the HMD" );
 static CVAR_DEFINE_AUTO( vr_reversetorch, "0", FCVAR_ARCHIVE, "reverse the tracked flashlight direction" );
@@ -99,6 +101,8 @@ void CL_VRRegisterCvars( void )
 	Cvar_RegisterVariable( &vr_controller_tracking_haptic );
 	Cvar_RegisterVariable( &vr_backpack_weapon );
 	Cvar_RegisterVariable( &vr_lasersight );
+	Cvar_RegisterVariable( &vr_mirror_weapons );
+	Cvar_RegisterVariable( &vr_weapon_backface_culling );
 	Cvar_RegisterVariable( &vr_height_adjust );
 	Cvar_RegisterVariable( &vr_headtorch );
 	Cvar_RegisterVariable( &vr_reversetorch );
