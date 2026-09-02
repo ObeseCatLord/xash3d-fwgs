@@ -46,6 +46,7 @@ void Test_RunGamma( void );
 void Test_RunDelta( void );
 void Test_RunBuffer( void );
 void Test_RunMunge( void );
+void Test_RunBmodel( void );
 void Test_RunTitles( void );
 void Test_RunVRUsercmdSidecar( void );
 void Test_RunVRInputPolicy( void );
@@ -59,6 +60,7 @@ void Test_RunVRInputPolicy( void );
 	Test_RunBuffer(); \
 	Test_RunDelta(); \
 	Test_RunMunge(); \
+	Test_RunBmodel(); \
 	Test_RunVRUsercmdSidecar(); \
 	Test_RunVRInputPolicy();
 
