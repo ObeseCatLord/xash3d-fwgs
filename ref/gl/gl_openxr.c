@@ -120,6 +120,7 @@ typedef struct gl_openxr_state_s
 	qboolean views_valid;
 	qboolean submitted_once;
 	qboolean ui_submitted_once;
+	qboolean tracked_controllers_once;
 	qboolean reference_changed;
 	qboolean exit_requested;
 	int current_eye;
@@ -1099,6 +1100,16 @@ qboolean GL_OpenXRFrameBegin( ref_vr_frame_t *frame )
 		if( actions_synced )
 			actions_synced = GL_OpenXRFillHands( frame->hands );
 		if( actions_synced ) SetBits( frame->flags, REF_VR_FRAME_ACTIONS_VALID );
+		if( actions_synced && !xr.tracked_controllers_once )
+		{
+			const uint32_t required = REF_VR_HAND_GRIP_VALID | REF_VR_HAND_AIM_VALID;
+			if(( frame->hands[0].flags & required ) == required &&
+				( frame->hands[1].flags & required ) == required )
+			{
+				xr.tracked_controllers_once = true;
+				gEngfuncs.Con_Printf( "OpenXR: first tracked controller frame received\n" );
+			}
+		}
 		if( xr.reference_changed ) SetBits( frame->flags, REF_VR_FRAME_REFERENCE_CHANGED );
 		if( xr.views_valid )
 		{
