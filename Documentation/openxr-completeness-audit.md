@@ -30,10 +30,15 @@ architecture evidence only and is not a product target.
 
 ## Source-completeness result
 
-Two independent Terra closure audits compared the desktop implementation to
-the Team Beef sources. Their source-proven findings were fixed before this
-status was recorded. No known Lambda1VR gameplay feature remains stubbed or
-deferred in the Linux source path.
+Independent Terra closure audits and the retained oracle-to-desktop matrix
+compared the desktop implementation to the Team Beef sources. Their
+source-proven findings were fixed before this status was recorded. No known
+Lambda1VR gameplay feature remains stubbed or deferred in the Linux source
+path. This is a source-traceability result; runtime parity remains incomplete.
+
+See `lambda1vr-parity-matrix.md` for the behavior-family mapping,
+`openxr-acceptance-evidence.md` for commit-stamped evidence, and
+`senior-review-disposition.md` for the final sol-max review decisions.
 
 | Surface | Source status | Runtime status |
 |---|---|---|
@@ -89,6 +94,11 @@ hornetgun.
   by the protocol-49-only Xash server before sign-on. The client-DLL
   `updatevr` fallback is source-covered, but a live fallback test needs an
   actual protocol-48 server rather than weakening the production server.
+- The post-review strict Sven smoke at clean engine/game heads additionally
+  required VR client API v2 initialization, valid tracking for both simulated
+  controllers, complete server-consumer readiness, and a valid sidecar pose
+  delivered to the game DLL. It passed with zero resource warnings; artifact
+  hashes are retained in `openxr-acceptance-evidence.md`.
 
 Builds, symbols, packet records and map inventories are necessary evidence,
 but they do not by themselves prove user-observable gameplay.
