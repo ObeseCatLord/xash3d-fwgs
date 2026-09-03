@@ -693,6 +693,7 @@ void SV_ClearGameState( void );
 // sv_pmove.c
 //
 void SV_InitClientMove( void );
+qboolean SV_VRUsercmdSidecarReady( void );
 void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, const vr_usercmd_sidecar_t *vr_sidecar, int random_seed );
 
 //

@@ -32,6 +32,7 @@ static int	g_userid = 1;
 
 static void SV_UserinfoChanged( sv_client_t *cl );
 static void SV_ExecuteClientCommand( sv_client_t *cl, const char *s );
+static uint SV_NegotiateClientExtensions( int requested_extensions, qboolean vr_usercmd_ready );
 
 /*
 =================
@@ -465,7 +466,7 @@ static void SV_ConnectClient( netadr_t from )
 	newcl->frames = frames;
 	newcl->userid = g_userid++;	// create unique userid
 	newcl->state = cs_connected;	// now expect "spawn" command
-	newcl->extensions = FBitSet( extensions, NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE | NET_EXT_VR_USERCMD );
+	newcl->extensions = SV_NegotiateClientExtensions( extensions, SV_VRUsercmdSidecarReady( ));
 	Q_strncpy( newcl->useragent, protinfo, sizeof( newcl->useragent ));
 
 	// HACKHACK: can hear all players by default to avoid issues
@@ -3226,6 +3227,15 @@ static qboolean SV_PlayerIsFrozen( const edict_t *pClient )
 	return false;
 }
 
+static uint SV_NegotiateClientExtensions( int requested_extensions, qboolean vr_usercmd_ready )
+{
+	uint extensions = FBitSet( requested_extensions, NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE | NET_EXT_VR_USERCMD );
+
+	if( !vr_usercmd_ready )
+		ClearBits( extensions, NET_EXT_VR_USERCMD );
+	return extensions;
+}
+
 static qboolean SV_ReadVRUsercmdSidecars( sizebuf_t *msg, vr_usercmd_sidecar_t *samples, int totalcmds )
 {
 	int version, bytes, i, field;
@@ -3287,6 +3297,16 @@ void Test_RunVRUsercmdSidecar( void )
 	vr_usercmd_sidecar_t pose = { 0 };
 	vr_usercmd_sidecar_t written[2] = { 0 };
 	sizebuf_t msg;
+	const int requested_extensions = NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE | NET_EXT_VR_USERCMD;
+
+	/* Requested sidecar with a complete consumer set. */
+	TASSERT_EQi( SV_NegotiateClientExtensions( requested_extensions, true ), requested_extensions );
+	/* Requested sidecar with no game-DLL callbacks. */
+	TASSERT_EQi( SV_NegotiateClientExtensions( requested_extensions, false ), NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE );
+	/* Requested sidecar with a partial game-DLL callback set. */
+	TASSERT_EQi( SV_NegotiateClientExtensions( requested_extensions, false ), NET_EXT_SPLITSIZE | NET_EXT_NETCHAN_COOKIE );
+	/* A non-requesting client must keep its other advertised extensions. */
+	TASSERT_EQi( SV_NegotiateClientExtensions( NET_EXT_SPLITSIZE, false ), NET_EXT_SPLITSIZE );
 
 	/* No callback leaves a transport-only ladder sample; a valid callback adds
 	 * pose without being able to alter the ladder policy. */
