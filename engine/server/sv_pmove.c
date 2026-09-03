@@ -27,21 +27,43 @@ static void *sv_vr_sidecar_module;
 static vr_usercmd_sidecar_begin_pm_t sv_vr_sidecar_begin_pm;
 static vr_usercmd_sidecar_end_pm_t sv_vr_sidecar_end_pm;
 static vr_usercmd_sidecar_update_pose_t sv_vr_sidecar_update_pose;
+static qboolean sv_vr_sidecar_ready;
+static qboolean sv_vr_sidecar_pose_delivered;
+
+static void SV_InvalidateVRUsercmdSidecarExports( void )
+{
+	sv_vr_sidecar_module = NULL;
+	sv_vr_sidecar_begin_pm = NULL;
+	sv_vr_sidecar_end_pm = NULL;
+	sv_vr_sidecar_update_pose = NULL;
+	sv_vr_sidecar_ready = false;
+	sv_vr_sidecar_pose_delivered = false;
+}
 
 static void SV_ResolveVRUsercmdSidecarExports( void )
 {
 	if( sv_vr_sidecar_module == svgame.hInstance )
 		return;
+	SV_InvalidateVRUsercmdSidecarExports();
 	sv_vr_sidecar_module = svgame.hInstance;
-	sv_vr_sidecar_begin_pm = NULL;
-	sv_vr_sidecar_end_pm = NULL;
-	sv_vr_sidecar_update_pose = NULL;
 	if( sv_vr_sidecar_module )
 	{
 		sv_vr_sidecar_begin_pm = (vr_usercmd_sidecar_begin_pm_t)COM_GetProcAddress( sv_vr_sidecar_module, VR_USERCMD_SIDECAR_BEGIN_PM_EXPORT );
 		sv_vr_sidecar_end_pm = (vr_usercmd_sidecar_end_pm_t)COM_GetProcAddress( sv_vr_sidecar_module, VR_USERCMD_SIDECAR_END_PM_EXPORT );
 		sv_vr_sidecar_update_pose = (vr_usercmd_sidecar_update_pose_t)COM_GetProcAddress( sv_vr_sidecar_module, VR_USERCMD_SIDECAR_UPDATE_POSE_EXPORT );
+		sv_vr_sidecar_ready = sv_vr_sidecar_begin_pm && sv_vr_sidecar_end_pm && sv_vr_sidecar_update_pose;
+
+		if( sv_vr_sidecar_ready )
+			Con_Reportf( "SV: vr_usercmd_sidecar_consumer_ready\n" );
+		else if( sv_vr_sidecar_begin_pm || sv_vr_sidecar_end_pm || sv_vr_sidecar_update_pose )
+			Con_Printf( S_WARN "SV: disabled NET_EXT_VR_USERCMD; game DLL must export all VR usercmd sidecar callbacks\n" );
 	}
+}
+
+qboolean SV_VRUsercmdSidecarReady( void )
+{
+	SV_ResolveVRUsercmdSidecarExports();
+	return sv_vr_sidecar_ready;
 }
 
 void SV_ClipPMoveToEntity( physent_t *pe, const vec3_t start, vec3_t mins, vec3_t maxs, const vec3_t end, pmtrace_t *tr )
@@ -458,6 +480,11 @@ SV_InitClientMove
 */
 void SV_InitClientMove( void )
 {
+	// SV_LoadProgs calls us once after each successful game-DLL load.  Clear the
+	// cache first because a reload can reuse the previous loader handle.
+	SV_InvalidateVRUsercmdSidecarExports();
+	SV_ResolveVRUsercmdSidecarExports();
+
 	Pmove_Init ();
 
 	svgame.pmove->server = true;
@@ -967,7 +994,14 @@ void SV_RunCmd( sv_client_t *cl, usercmd_t *ucmd, const vr_usercmd_sidecar_t *vr
 	SV_ResolveVRUsercmdSidecarExports();
 	if( vr_sidecar && sv_vr_sidecar_update_pose && vr_sidecar->version == VR_USERCMD_SIDECAR_VERSION &&
 		( vr_sidecar->flags & VR_USERCMD_SIDECAR_POSE_VALID ))
+	{
 		sv_vr_sidecar_update_pose( clent, vr_sidecar );
+		if( !sv_vr_sidecar_pose_delivered )
+		{
+			Con_Reportf( "SV: vr_usercmd_sidecar_pose_delivered\n" );
+			sv_vr_sidecar_pose_delivered = true;
+		}
+	}
 	svgame.dllFuncs.pfnPlayerPreThink( clent );
 	SV_PlayerRunThink( clent, frametime, cl->timebase );
 
