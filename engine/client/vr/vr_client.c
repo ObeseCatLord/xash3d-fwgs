@@ -43,6 +43,7 @@ static CVAR_DEFINE_AUTO( vr_reversetorch, "0", FCVAR_ARCHIVE, "reverse the track
 static ref_vr_frame_t vr_frame;
 static ref_vr_pose_t vr_center;
 static qboolean vr_frame_begun;
+static qboolean vr_ui_trigger_blocked;
 static qboolean vr_center_valid;
 static ref_vr_pose_t vr_previous_head;
 static qboolean vr_previous_head_valid;
@@ -189,6 +190,13 @@ static void CL_VRCommand( const char *command )
 	Cbuf_AddText( buffer );
 }
 
+static qboolean CL_VRUIActive( void )
+{
+	/* GoldSrc VGUI dialogs keep key_game while requesting a visible cursor.
+	 * Reuse the same cursor ownership that disables desktop mouse look. */
+	return cls.key_dest != key_game || host.mouse_visible;
+}
+
 static void CL_VRResetUIPointer( void )
 {
 	if( vr_ui_pressed && vr_ui_cursor_valid )
@@ -200,6 +208,7 @@ static void CL_VRResetUIPointer( void )
 static void CL_VRResetInputState( qboolean release_menu )
 {
 	CL_VRResetUIPointer();
+	vr_ui_trigger_blocked = false;
 	Cvar_SetValue( vr_comfort_moving.name, 0.0f );
 	if( release_menu )
 	{
@@ -393,10 +402,13 @@ void CL_VRFrameBegin( void )
 		return;
 	}
 
-	if( cls.key_dest != key_game )
+	if( vr_frame.hands[dominant].trigger < 0.55f )
+		vr_ui_trigger_blocked = false;
+	if( CL_VRUIActive() )
 	{
 		ref_vr_hand_t *pointer = &vr_frame.hands[dominant];
 		qboolean pressed = pointer->trigger >= 0.55f;
+		if( pressed ) vr_ui_trigger_blocked = true;
 
 		if( FBitSet( pointer->flags, REF_VR_HAND_UI_VALID ))
 		{
@@ -421,7 +433,7 @@ void CL_VRFrameBegin( void )
 		FBitSet( vr_frame.hands[1].buttons, REF_VR_BUTTON_STICK ));
 	if( menu != old_menu ) Key_Event( K_ESCAPE, menu );
 	vr_menu_active = menu;
-	if( cls.key_dest != key_game )
+	if( CL_VRUIActive() )
 	{
 		for( int i = 0; i < REF_VR_MAX_HANDS; ++i )
 			vr_previous_buttons[i] = vr_frame.hands[i].buttons;
@@ -774,7 +786,7 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	ref_vr_pose_t relative_aim, relative_head;
 	vec3_t aim_angles, head_angles;
 
-	if( !cmd || !active || cls.key_dest != key_game || !CL_VRIsActive() ||
+	if( !cmd || !active || CL_VRUIActive() || !CL_VRIsActive() ||
 		!FBitSet( vr_frame.flags, REF_VR_FRAME_FOCUSED ) ||
 		!FBitSet( vr_frame.flags, REF_VR_FRAME_ACTIONS_VALID ))
 	{
@@ -852,7 +864,7 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 
 	if( variant == 3 )
 	{
-		if( weapon->trigger >= 0.55f ) SetBits( cmd->buttons, IN_ATTACK );
+		if( !vr_ui_trigger_blocked && weapon->trigger >= 0.55f ) SetBits( cmd->buttons, IN_ATTACK );
 		if( !vr_one_controller_shifted && FBitSet( weapon->buttons, REF_VR_BUTTON_SECONDARY ))
 			SetBits( cmd->buttons, IN_ATTACK2 );
 		if( vr_one_controller_running ) SetBits( cmd->buttons, IN_RUN );
@@ -861,7 +873,7 @@ void CL_VRAppendMove( float frametime, usercmd_t *cmd, qboolean active )
 	}
 	else
 	{
-		if( weapon->trigger >= 0.55f )
+		if( !vr_ui_trigger_blocked && weapon->trigger >= 0.55f )
 			SetBits( cmd->buttons, CL_VRHandSqueezePressed( weapon ) ? IN_ATTACK2 : IN_ATTACK );
 		if( move->trigger >= 0.55f ) SetBits( cmd->buttons, IN_RUN );
 		if( FBitSet( weapon->buttons, REF_VR_BUTTON_STICK )) SetBits( cmd->buttons, IN_USE );
@@ -1050,6 +1062,19 @@ qboolean CL_VRGetFlashlightPose( vec3_t origin, vec3_t forward )
 
 void Test_RunVRInputPolicy( void )
 {
+	int saved_dest = cls.key_dest;
+	qboolean saved_cursor = host.mouse_visible;
+	cls.key_dest = key_game;
+	host.mouse_visible = false;
+	TASSERT( !CL_VRUIActive() );
+	host.mouse_visible = true;
+	TASSERT( CL_VRUIActive() ); /* Sven MOTD/menu, without changing key_dest. */
+	host.mouse_visible = false;
+	cls.key_dest = key_menu;
+	TASSERT( CL_VRUIActive() );
+	cls.key_dest = saved_dest;
+	host.mouse_visible = saved_cursor;
+	vr_ui_trigger_blocked = true;
 	TASSERT( !REF_VR_SQUEEZE_PRESSED( 0.5f ));
 	TASSERT( REF_VR_SQUEEZE_PRESSED( 0.5001f ));
 	TASSERT( CL_VRPhysicalCrouchState( false, 0.85f, 1.0f, 0.84f ));
@@ -1060,6 +1085,7 @@ void Test_RunVRInputPolicy( void )
 	vr_physical_crouched = true;
 	/* Focus and session loss both take this reset path. */
 	CL_VRResetInputState( false );
+	TASSERT( !vr_ui_trigger_blocked );
 	TASSERT( !vr_physical_crouched );
 	vr_physical_crouched = true;
 	vr_center_valid = false;
