@@ -197,6 +197,13 @@ static qboolean CL_VRUIActive( void )
 	return cls.key_dest != key_game || host.mouse_visible;
 }
 
+static void CL_VRUpdateUITrigger( float trigger, qboolean ui_active )
+{
+	/* Called only with a focused, valid action sample. Focus loss may release
+	 * a VGUI button and close its dialog, but is not a physical trigger release. */
+	vr_ui_trigger_blocked = trigger >= 0.55f && ( vr_ui_trigger_blocked || ui_active );
+}
+
 static void CL_VRResetUIPointer( void )
 {
 	if( vr_ui_pressed && vr_ui_cursor_valid )
@@ -208,7 +215,6 @@ static void CL_VRResetUIPointer( void )
 static void CL_VRResetInputState( qboolean release_menu )
 {
 	CL_VRResetUIPointer();
-	vr_ui_trigger_blocked = false;
 	Cvar_SetValue( vr_comfort_moving.name, 0.0f );
 	if( release_menu )
 	{
@@ -402,13 +408,11 @@ void CL_VRFrameBegin( void )
 		return;
 	}
 
-	if( vr_frame.hands[dominant].trigger < 0.55f )
-		vr_ui_trigger_blocked = false;
+	CL_VRUpdateUITrigger( vr_frame.hands[dominant].trigger, CL_VRUIActive() );
 	if( CL_VRUIActive() )
 	{
 		ref_vr_hand_t *pointer = &vr_frame.hands[dominant];
 		qboolean pressed = pointer->trigger >= 0.55f;
-		if( pressed ) vr_ui_trigger_blocked = true;
 
 		if( FBitSet( pointer->flags, REF_VR_HAND_UI_VALID ))
 		{
@@ -1074,7 +1078,10 @@ void Test_RunVRInputPolicy( void )
 	TASSERT( CL_VRUIActive() );
 	cls.key_dest = saved_dest;
 	host.mouse_visible = saved_cursor;
-	vr_ui_trigger_blocked = true;
+	CL_VRUpdateUITrigger( 0.0f, false );
+	TASSERT( !vr_ui_trigger_blocked );
+	CL_VRUpdateUITrigger( 1.0f, true );
+	TASSERT( vr_ui_trigger_blocked );
 	TASSERT( !REF_VR_SQUEEZE_PRESSED( 0.5f ));
 	TASSERT( REF_VR_SQUEEZE_PRESSED( 0.5001f ));
 	TASSERT( CL_VRPhysicalCrouchState( false, 0.85f, 1.0f, 0.84f ));
@@ -1085,7 +1092,13 @@ void Test_RunVRInputPolicy( void )
 	vr_physical_crouched = true;
 	/* Focus and session loss both take this reset path. */
 	CL_VRResetInputState( false );
+	TASSERT( vr_ui_trigger_blocked ); /* Synthetic pointer-up is not release. */
+	CL_VRUpdateUITrigger( 1.0f, false );
+	TASSERT( vr_ui_trigger_blocked ); /* UI closed; held trigger is consumed. */
+	CL_VRUpdateUITrigger( 0.0f, false );
 	TASSERT( !vr_ui_trigger_blocked );
+	CL_VRUpdateUITrigger( 1.0f, false );
+	TASSERT( !vr_ui_trigger_blocked ); /* Release/repress permits gameplay. */
 	TASSERT( !vr_physical_crouched );
 	vr_physical_crouched = true;
 	vr_center_valid = false;
