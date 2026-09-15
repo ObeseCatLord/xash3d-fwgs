@@ -33,6 +33,16 @@ def get_frameworks(env):
 		return ['IOKit', 'CoreFoundation']
 	return []
 
+def linux_executable_export_flags(env):
+	if env.DEST_OS != 'linux':
+		return []
+	if env.HAVE_LD_EXPORT_DYNAMIC_SYMBOL:
+		return ['-Wl,--export-dynamic-symbol=SV_TargetedSoundV1']
+	# Binutils before 2.35 lacks --export-dynamic-symbol. Exporting the
+	# executable's dynamic symbols is the compatible fallback needed for the
+	# same optional game-DLL dlsym lookup.
+	return ['-Wl,--export-dynamic']
+
 @TaskGen.extension('.m')
 def m_hook(self, node):
 	return self.create_compiled_task('c', node)
@@ -79,6 +89,11 @@ def configure(conf):
 	# Common dependencies, will be linked to both dedicated server and client
 	if conf.env.DEST_OS == 'linux':
 		conf.check_cc(lib='rt')
+		conf.env.HAVE_LD_EXPORT_DYNAMIC_SYMBOL = conf.check_cc(
+			fragment='int SV_TargetedSoundV1(void) { return 0; } int main(void) { return SV_TargetedSoundV1(); }',
+			linkflags=['-Wl,--export-dynamic-symbol=SV_TargetedSoundV1'],
+			mandatory=False,
+			msg='Checking for --export-dynamic-symbol linker support')
 		if conf.env.MAGX:
 			conf.define('XASH_CRASHHANDLER', 0)
 	elif conf.env.DEST_OS == 'haiku':
@@ -226,7 +241,7 @@ def build(bld):
 		# Default visibility alone does not place an ELF executable symbol in
 		# .dynsym, so export just this extension instead of all engine symbols.
 		if bld.env.DEST_OS == 'linux':
-			server_linkflags = ['-Wl,--export-dynamic-symbol=SV_TargetedSoundV1']
+			server_linkflags = linux_executable_export_flags(bld.env)
 		bld.program(
 			source = server_source,
 			target = 'xash',
@@ -299,7 +314,7 @@ def build(bld):
 		# Executables need an explicit dynamic export; shared launcher engines
 		# retain the symbol through its default visibility.
 		if bld.env.DEST_OS == 'linux' and not bld.env.LAUNCHER:
-			linkflags = ['-Wl,--export-dynamic-symbol=SV_TargetedSoundV1']
+			linkflags = linux_executable_export_flags(bld.env)
 
 		if bld.env.DEST_OS == 'emscripten':
 			linkflags = ['-sINITIAL_MEMORY=134217728', '-sALLOW_MEMORY_GROWTH=1', '-sSTACK_SIZE=16777216']
